@@ -174,7 +174,7 @@ async function persistLeadFromTranscript(args: {
   };
 
   if (args.leadId) {
-    await supabaseAdmin.from("leads").update(payload).eq("id", args.leadId);
+    await supabaseAdmin.from("leads").upsert({ id: args.leadId, ...payload });
   } else {
     await supabaseAdmin.from("leads").insert(payload);
   }
