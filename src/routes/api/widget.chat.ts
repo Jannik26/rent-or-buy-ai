@@ -11,7 +11,7 @@ const corsHeaders = {
 
 type Body = { messages?: UIMessage[]; companyId?: string; leadId?: string | null };
 
-export const Route = createFileRoute("/api/public/widget/chat")({
+export const Route = createFileRoute("/api/widget/chat")({
   server: {
     handlers: {
       OPTIONS: () => new Response(null, { status: 204, headers: corsHeaders }),
@@ -154,12 +154,12 @@ async function persistLeadFromTranscript(args: {
   const data = extractData(combined);
   const score = scoreFromData(data);
 
-  const payload: Record<string, unknown> = {
+  const payload = {
     company_id: args.companyId,
     name: data.name ?? null,
     email: data.email ?? null,
     phone: data.phone ?? null,
-    intent: data.intent ?? "unbekannt",
+    intent: (data.intent ?? "unbekannt") as "kauf" | "miete" | "unbekannt",
     object_desc: data.object_desc ?? null,
     budget: data.budget ?? null,
     financing: data.financing ?? null,
@@ -170,15 +170,11 @@ async function persistLeadFromTranscript(args: {
     score,
     status: data._status ?? "neu",
     qualification_summary: transcript.slice(-2).map((t) => `${t.role}: ${t.content}`).join(" · ").slice(0, 280),
-    messages: transcript,
+    messages: transcript as unknown as never,
   };
 
   if (args.leadId) {
-    // Strip null overwrites to preserve existing data
-    const update = Object.fromEntries(
-      Object.entries(payload).filter(([k, v]) => v !== null || k === "messages" || k === "score" || k === "status" || k === "qualification_summary"),
-    );
-    await supabaseAdmin.from("leads").update(update).eq("id", args.leadId);
+    await supabaseAdmin.from("leads").update(payload).eq("id", args.leadId);
   } else {
     await supabaseAdmin.from("leads").insert(payload);
   }
