@@ -14,7 +14,110 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      companies: {
+        Row: {
+          created_at: string
+          greeting: string | null
+          id: string
+          name: string
+          owner_id: string
+          primary_color: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          greeting?: string | null
+          id?: string
+          name: string
+          owner_id: string
+          primary_color?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          greeting?: string | null
+          id?: string
+          name?: string
+          owner_id?: string
+          primary_color?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      leads: {
+        Row: {
+          budget: string | null
+          company_id: string
+          created_at: string
+          email: string | null
+          financing: string | null
+          household_size: string | null
+          id: string
+          income: string | null
+          intent: Database["public"]["Enums"]["lead_intent"]
+          messages: Json
+          move_in_date: string | null
+          name: string | null
+          object_desc: string | null
+          phone: string | null
+          qualification_summary: string | null
+          score: Database["public"]["Enums"]["lead_score"]
+          status: string
+          timeframe: string | null
+          updated_at: string
+        }
+        Insert: {
+          budget?: string | null
+          company_id: string
+          created_at?: string
+          email?: string | null
+          financing?: string | null
+          household_size?: string | null
+          id?: string
+          income?: string | null
+          intent?: Database["public"]["Enums"]["lead_intent"]
+          messages?: Json
+          move_in_date?: string | null
+          name?: string | null
+          object_desc?: string | null
+          phone?: string | null
+          qualification_summary?: string | null
+          score?: Database["public"]["Enums"]["lead_score"]
+          status?: string
+          timeframe?: string | null
+          updated_at?: string
+        }
+        Update: {
+          budget?: string | null
+          company_id?: string
+          created_at?: string
+          email?: string | null
+          financing?: string | null
+          household_size?: string | null
+          id?: string
+          income?: string | null
+          intent?: Database["public"]["Enums"]["lead_intent"]
+          messages?: Json
+          move_in_date?: string | null
+          name?: string | null
+          object_desc?: string | null
+          phone?: string | null
+          qualification_summary?: string | null
+          score?: Database["public"]["Enums"]["lead_score"]
+          status?: string
+          timeframe?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "leads_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -23,7 +126,8 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      lead_intent: "kauf" | "miete" | "unbekannt"
+      lead_score: "hot" | "warm" | "cold"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +254,9 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      lead_intent: ["kauf", "miete", "unbekannt"],
+      lead_score: ["hot", "warm", "cold"],
+    },
   },
 } as const
