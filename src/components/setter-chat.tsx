@@ -61,10 +61,28 @@ export function SetterChat({
     [greeting],
   );
 
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
   const { messages, sendMessage, status } = useChat({
     id: leadId,
     messages: initialMessages,
     transport,
+    onError: (err) => {
+      console.error("[SetterChat] chat error", err);
+      const raw = err?.message || "";
+      let friendly = "Es ist ein Fehler aufgetreten. Bitte versuchen Sie es erneut.";
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed?.error) friendly = parsed.error;
+      } catch {
+        if (raw) friendly = raw;
+      }
+      setErrorMsg(friendly);
+    },
+    onFinish: ({ message }) => {
+      console.log("[SetterChat] message finished", { id: message.id, role: message.role });
+      setErrorMsg(null);
+    },
   });
 
   const [input, setInput] = useState("");
@@ -86,6 +104,8 @@ export function SetterChat({
     const text = input.trim();
     if (!text || busy) return;
     setInput("");
+    setErrorMsg(null);
+    console.log("[SetterChat] sendMessage", { companyId, leadId, text });
     void sendMessage({ text });
   }
 
