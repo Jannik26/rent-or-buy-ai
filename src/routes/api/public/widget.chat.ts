@@ -11,7 +11,7 @@ const corsHeaders = {
 
 type Body = { messages?: UIMessage[]; companyId?: string; leadId?: string | null };
 
-export const Route = createFileRoute("/api/widget/chat")({
+export const Route = createFileRoute("/api/public/widget/chat")({
   server: {
     handlers: {
       OPTIONS: () => new Response(null, { status: 204, headers: corsHeaders }),
@@ -20,12 +20,27 @@ export const Route = createFileRoute("/api/widget/chat")({
           const body = (await request.json()) as Body;
           const messages = body.messages;
           const companyId = body.companyId;
+          console.log("[widget] chat request", {
+            companyId,
+            leadId: body.leadId,
+            messageCount: Array.isArray(messages) ? messages.length : 0,
+          });
           if (!Array.isArray(messages) || !companyId) {
-            return new Response("Bad request", { status: 400, headers: corsHeaders });
+            return new Response(JSON.stringify({ error: "Ungültige Anfrage." }), {
+              status: 400,
+              headers: { ...corsHeaders, "content-type": "application/json" },
+            });
           }
 
           const key = process.env.LOVABLE_API_KEY;
-          if (!key) return new Response("Missing LOVABLE_API_KEY", { status: 500, headers: corsHeaders });
+          if (!key) {
+            console.error("[widget] LOVABLE_API_KEY fehlt");
+            return new Response(
+              JSON.stringify({ error: "KI-Dienst ist nicht konfiguriert (LOVABLE_API_KEY fehlt)." }),
+              { status: 500, headers: { ...corsHeaders, "content-type": "application/json" } },
+            );
+          }
+
 
           const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
