@@ -9,7 +9,26 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const MAX_MESSAGES = 50;
+const MAX_CHARS_PER_MSG = 4000;
+const USER_DATA_MARKER_RE = /<<DATA>>|<<END>>/gi;
+
 type Body = { messages?: UIMessage[]; companyId?: string; leadId?: string | null };
+
+function sanitizeUserMessages(messages: UIMessage[]): UIMessage[] {
+  return messages.slice(-MAX_MESSAGES).map((m) => {
+    if (m.role !== "user") return m;
+    const parts = (m.parts ?? []).map((p) => {
+      if (p.type !== "text") return p;
+      const text = String((p as { text: string }).text ?? "")
+        .replace(USER_DATA_MARKER_RE, "")
+        .slice(0, MAX_CHARS_PER_MSG);
+      return { ...p, text } as typeof p;
+    });
+    return { ...m, parts };
+  });
+}
 
 export const Route = createFileRoute("/api/public/widget/chat")({
   server: {
@@ -18,19 +37,29 @@ export const Route = createFileRoute("/api/public/widget/chat")({
       POST: async ({ request }) => {
         try {
           const body = (await request.json()) as Body;
-          const messages = body.messages;
+          const rawMessages = body.messages;
           const companyId = body.companyId;
           console.log("[widget] chat request", {
             companyId,
             leadId: body.leadId,
-            messageCount: Array.isArray(messages) ? messages.length : 0,
+            messageCount: Array.isArray(rawMessages) ? rawMessages.length : 0,
           });
-          if (!Array.isArray(messages) || !companyId) {
+          if (!Array.isArray(rawMessages) || !companyId || !UUID_RE.test(companyId)) {
             return new Response(JSON.stringify({ error: "Ungültige Anfrage." }), {
               status: 400,
               headers: { ...corsHeaders, "content-type": "application/json" },
             });
           }
+          if (rawMessages.length === 0) {
+            return new Response(JSON.stringify({ error: "Keine Nachrichten." }), {
+              status: 400,
+              headers: { ...corsHeaders, "content-type": "application/json" },
+            });
+          }
+          const leadIdRaw = body.leadId ?? null;
+          const leadId = leadIdRaw && UUID_RE.test(leadIdRaw) ? leadIdRaw : null;
+
+          const messages = sanitizeUserMessages(rawMessages as UIMessage[]);
 
           const key = process.env.LOVABLE_API_KEY;
           if (!key) {
@@ -40,6 +69,7 @@ export const Route = createFileRoute("/api/public/widget/chat")({
               { status: 500, headers: { ...corsHeaders, "content-type": "application/json" } },
             );
           }
+
 
 
           const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
@@ -89,13 +119,14 @@ export const Route = createFileRoute("/api/public/widget/chat")({
               try {
                 await persistLeadFromTranscript({
                   companyId: company.id,
-                  leadId: body.leadId ?? null,
-                  messages: messages as UIMessage[],
+                  leadId,
+                  messages,
                   assistantText: text,
                 });
               } catch (err) {
                 console.error("[widget] persist error", err);
               }
+
             },
           });
 
@@ -197,10 +228,9 @@ async function persistLeadFromTranscript(args: {
     content: args.assistantText.replace(DATA_RE, "").trim(),
   });
 
-  // Collect data from user + assistant
-  let combined = args.assistantText;
-  for (const m of args.messages) combined += "\n" + partsToText(m.parts);
-  const data = extractData(combined);
+  // Collect data ONLY from the AI assistant's own response — never trust
+  // <<DATA>> markers smuggled in by the client in user messages.
+  const data = extractData(args.assistantText);
   const score = scoreFromData(data);
 
   const payload = {
@@ -223,6 +253,17 @@ async function persistLeadFromTranscript(args: {
   };
 
   if (args.leadId) {
+    // Cross-company guard: refuse to upsert a lead that already belongs to a different company.
+    const { data: existing } = await supabaseAdmin
+      .from("leads")
+      .select("company_id")
+      .eq("id", args.leadId)
+      .maybeSingle();
+    if (existing && existing.company_id !== args.companyId) {
+      console.warn("[widget] leadId belongs to different company — inserting new lead instead");
+      await supabaseAdmin.from("leads").insert(payload);
+      return;
+    }
     await supabaseAdmin.from("leads").upsert({ id: args.leadId, ...payload });
   } else {
     await supabaseAdmin.from("leads").insert(payload);

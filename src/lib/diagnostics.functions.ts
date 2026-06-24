@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { generateText } from "ai";
 import { createLovableAiGatewayProvider } from "@/lib/ai-gateway.server";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 const DEMO_COMPANY_ID = "00000000-0000-0000-0000-000000000000";
 
@@ -14,8 +15,9 @@ export type DiagnosticsResult = {
   lastSuccess: { at: string; source: string; message: string } | null;
 };
 
-export const runDiagnostics = createServerFn({ method: "POST" }).handler(
-  async (): Promise<DiagnosticsResult> => {
+export const runDiagnostics = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .handler(async (): Promise<DiagnosticsResult> => {
     const checkedAt = new Date().toISOString();
 
     // Supabase + companyId check
@@ -94,5 +96,5 @@ export const runDiagnostics = createServerFn({ method: "POST" }).handler(
     }
 
     return { checkedAt, companyId, supabase, lovableApiKey, aiModel, lastError, lastSuccess };
-  },
-);
+  });
+
