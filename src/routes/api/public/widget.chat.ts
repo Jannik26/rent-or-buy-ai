@@ -51,7 +51,10 @@ export const Route = createFileRoute("/api/public/widget/chat")({
             .maybeSingle();
 
           if (!company) {
-            return new Response("Unknown company", { status: 404, headers: corsHeaders });
+            return new Response(JSON.stringify({ error: "Unbekanntes Unternehmen." }), {
+              status: 404,
+              headers: { ...corsHeaders, "content-type": "application/json" },
+            });
           }
 
           const gateway = createLovableAiGatewayProvider(key);
@@ -61,7 +64,11 @@ export const Route = createFileRoute("/api/public/widget/chat")({
             model,
             system: buildSystemPrompt(company.name),
             messages: await convertToModelMessages(messages as UIMessage[]),
+            onError: (event) => {
+              console.error("[widget] streamText error", event);
+            },
             onFinish: async ({ text }) => {
+              console.log("[widget] chat finished", { chars: text.length });
               try {
                 await persistLeadFromTranscript({
                   companyId: company.id,
