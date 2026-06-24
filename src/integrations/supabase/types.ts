@@ -20,7 +20,7 @@ export type Database = {
           greeting: string | null
           id: string
           name: string
-          owner_id: string
+          owner_id: string | null
           primary_color: string | null
           updated_at: string
         }
@@ -29,7 +29,7 @@ export type Database = {
           greeting?: string | null
           id?: string
           name: string
-          owner_id: string
+          owner_id?: string | null
           primary_color?: string | null
           updated_at?: string
         }
@@ -38,7 +38,7 @@ export type Database = {
           greeting?: string | null
           id?: string
           name?: string
-          owner_id?: string
+          owner_id?: string | null
           primary_color?: string | null
           updated_at?: string
         }
@@ -117,6 +117,33 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      system_events: {
+        Row: {
+          context: Json | null
+          created_at: string
+          id: number
+          kind: string
+          message: string
+          source: string
+        }
+        Insert: {
+          context?: Json | null
+          created_at?: string
+          id?: number
+          kind: string
+          message: string
+          source: string
+        }
+        Update: {
+          context?: Json | null
+          created_at?: string
+          id?: number
+          kind?: string
+          message?: string
+          source?: string
+        }
+        Relationships: []
       }
     }
     Views: {
