@@ -17,8 +17,18 @@ export type DiagnosticsResult = {
 
 export const runDiagnostics = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .handler(async (): Promise<DiagnosticsResult> => {
+  .handler(async ({ context }): Promise<DiagnosticsResult> => {
+    // Admin role check — diagnostics expose cross-company operational data.
+    const { data: isAdmin, error: roleErr } = await context.supabase.rpc("has_role", {
+      _user_id: context.userId,
+      _role: "admin",
+    });
+    if (roleErr || !isAdmin) {
+      throw new Response("Forbidden – Admin-Rolle erforderlich.", { status: 403 });
+    }
+
     const checkedAt = new Date().toISOString();
+
 
     // Supabase + companyId check
     let supabase = { ok: false, detail: "Nicht geprüft" };
