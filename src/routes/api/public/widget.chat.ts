@@ -66,9 +66,26 @@ export const Route = createFileRoute("/api/public/widget/chat")({
             messages: await convertToModelMessages(messages as UIMessage[]),
             onError: (event) => {
               console.error("[widget] streamText error", event);
+              const message = event instanceof Error ? event.message : JSON.stringify(event);
+              void supabaseAdmin
+                .from("system_events")
+                .insert({
+                  kind: "error",
+                  source: "widget.chat.stream",
+                  message: message.slice(0, 500),
+                  context: { companyId: company.id },
+                });
             },
             onFinish: async ({ text }) => {
               console.log("[widget] chat finished", { chars: text.length });
+              await supabaseAdmin
+                .from("system_events")
+                .insert({
+                  kind: "success",
+                  source: "widget.chat",
+                  message: text.replace(/<<DATA>>[\s\S]*?<<END>>/g, "").trim().slice(0, 240),
+                  context: { companyId: company.id, chars: text.length },
+                });
               try {
                 await persistLeadFromTranscript({
                   companyId: company.id,
@@ -89,6 +106,16 @@ export const Route = createFileRoute("/api/public/widget/chat")({
         } catch (err) {
           console.error("[widget] error", err);
           const msg = err instanceof Error ? err.message : "error";
+          try {
+            const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+            await supabaseAdmin.from("system_events").insert({
+              kind: "error",
+              source: "widget.chat.request",
+              message: msg.slice(0, 500),
+            });
+          } catch {
+            /* ignore */
+          }
           return new Response(JSON.stringify({ error: msg }), {
             status: 500,
             headers: { ...corsHeaders, "content-type": "application/json" },
