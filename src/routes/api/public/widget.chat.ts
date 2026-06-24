@@ -119,13 +119,14 @@ export const Route = createFileRoute("/api/public/widget/chat")({
               try {
                 await persistLeadFromTranscript({
                   companyId: company.id,
-                  leadId: body.leadId ?? null,
-                  messages: messages as UIMessage[],
+                  leadId,
+                  messages,
                   assistantText: text,
                 });
               } catch (err) {
                 console.error("[widget] persist error", err);
               }
+
             },
           });
 
@@ -227,10 +228,48 @@ async function persistLeadFromTranscript(args: {
     content: args.assistantText.replace(DATA_RE, "").trim(),
   });
 
-  // Collect data from user + assistant
-  let combined = args.assistantText;
-  for (const m of args.messages) combined += "\n" + partsToText(m.parts);
-  const data = extractData(combined);
+  // Collect data ONLY from the AI assistant's own response — never trust
+  // <<DATA>> markers smuggled in by the client in user messages.
+  const data = extractData(args.assistantText);
+  const score = scoreFromData(data);
+
+  const payload = {
+    company_id: args.companyId,
+    name: data.name ?? null,
+    email: data.email ?? null,
+    phone: data.phone ?? null,
+    intent: (data.intent ?? "unbekannt") as "kauf" | "miete" | "unbekannt",
+    object_desc: data.object_desc ?? null,
+    budget: data.budget ?? null,
+    financing: data.financing ?? null,
+    timeframe: data.timeframe ?? null,
+    income: data.income ?? null,
+    household_size: data.household_size ?? null,
+    move_in_date: data.move_in_date ?? null,
+    score,
+    status: data._status ?? "neu",
+    qualification_summary: transcript.slice(-2).map((t) => `${t.role}: ${t.content}`).join(" · ").slice(0, 280),
+    messages: transcript as unknown as never,
+  };
+
+  if (args.leadId) {
+    // Cross-company guard: refuse to upsert a lead that already belongs to a different company.
+    const { data: existing } = await supabaseAdmin
+      .from("leads")
+      .select("company_id")
+      .eq("id", args.leadId)
+      .maybeSingle();
+    if (existing && existing.company_id !== args.companyId) {
+      console.warn("[widget] leadId belongs to different company — inserting new lead instead");
+      await supabaseAdmin.from("leads").insert(payload);
+      return;
+    }
+    await supabaseAdmin.from("leads").upsert({ id: args.leadId, ...payload });
+  } else {
+    await supabaseAdmin.from("leads").insert(payload);
+  }
+}
+
   const score = scoreFromData(data);
 
   const payload = {
