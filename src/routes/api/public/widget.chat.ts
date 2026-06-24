@@ -87,6 +87,56 @@ export const Route = createFileRoute("/api/public/widget/chat")({
             });
           }
 
+          // ---- Rate limit (anti-spam / anti credit-abuse) ----
+          // Per (company + bucketKey) per minute. bucketKey = leadId or client IP.
+          const ip =
+            request.headers.get("cf-connecting-ip") ??
+            request.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
+            "unknown";
+          const bucketKey = leadId ?? `ip:${ip}`;
+          const minuteBucket = new Date(Math.floor(Date.now() / 60000) * 60000).toISOString();
+          const PER_MINUTE_LIMIT = 20;
+          const PER_COMPANY_LIMIT = 120;
+
+          // Upsert + read counter atomically (best-effort).
+          const { data: throttleRow } = await supabaseAdmin
+            .from("widget_throttle")
+            .upsert(
+              { company_id: company.id, bucket_key: bucketKey, minute_bucket: minuteBucket, count: 1 },
+              { onConflict: "company_id,bucket_key,minute_bucket", ignoreDuplicates: false },
+            )
+            .select("count")
+            .maybeSingle();
+          if (throttleRow && throttleRow.count > 1) {
+            await supabaseAdmin
+              .from("widget_throttle")
+              .update({ count: throttleRow.count + 1 })
+              .eq("company_id", company.id)
+              .eq("bucket_key", bucketKey)
+              .eq("minute_bucket", minuteBucket);
+          }
+          const currentCount = (throttleRow?.count ?? 1) + (throttleRow && throttleRow.count > 1 ? 1 : 0);
+          if (currentCount > PER_MINUTE_LIMIT) {
+            return new Response(
+              JSON.stringify({ error: "Zu viele Anfragen. Bitte einen Moment warten." }),
+              { status: 429, headers: { ...corsHeaders, "content-type": "application/json" } },
+            );
+          }
+          // Per-company per-minute cap across all visitors.
+          const { count: companyCount } = await supabaseAdmin
+            .from("widget_throttle")
+            .select("*", { count: "exact", head: true })
+            .eq("company_id", company.id)
+            .eq("minute_bucket", minuteBucket);
+          if ((companyCount ?? 0) > PER_COMPANY_LIMIT) {
+            return new Response(
+              JSON.stringify({ error: "Chat-Limit für dieses Unternehmen erreicht." }),
+              { status: 429, headers: { ...corsHeaders, "content-type": "application/json" } },
+            );
+          }
+
+
+
           const gateway = createLovableAiGatewayProvider(key);
           const model = gateway("google/gemini-3-flash-preview");
 
