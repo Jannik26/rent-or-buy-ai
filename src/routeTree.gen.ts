@@ -15,7 +15,7 @@ import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as WidgetCompanyIdRouteImport } from './routes/widget.$companyId'
 import { Route as AuthenticatedDashboardRouteImport } from './routes/_authenticated/dashboard'
-import { Route as ApiWidgetChatRouteImport } from './routes/api/widget.chat'
+import { Route as ApiPublicWidgetChatRouteImport } from './routes/api/public/widget.chat'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
@@ -46,9 +46,9 @@ const AuthenticatedDashboardRoute = AuthenticatedDashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
-const ApiWidgetChatRoute = ApiWidgetChatRouteImport.update({
-  id: '/api/widget/chat',
-  path: '/api/widget/chat',
+const ApiPublicWidgetChatRoute = ApiPublicWidgetChatRouteImport.update({
+  id: '/api/public/widget/chat',
+  path: '/api/public/widget/chat',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -58,7 +58,7 @@ export interface FileRoutesByFullPath {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/widget/$companyId': typeof WidgetCompanyIdRoute
-  '/api/widget/chat': typeof ApiWidgetChatRoute
+  '/api/public/widget/chat': typeof ApiPublicWidgetChatRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -66,7 +66,7 @@ export interface FileRoutesByTo {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/dashboard': typeof AuthenticatedDashboardRoute
   '/widget/$companyId': typeof WidgetCompanyIdRoute
-  '/api/widget/chat': typeof ApiWidgetChatRoute
+  '/api/public/widget/chat': typeof ApiPublicWidgetChatRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -76,7 +76,7 @@ export interface FileRoutesById {
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/_authenticated/dashboard': typeof AuthenticatedDashboardRoute
   '/widget/$companyId': typeof WidgetCompanyIdRoute
-  '/api/widget/chat': typeof ApiWidgetChatRoute
+  '/api/public/widget/chat': typeof ApiPublicWidgetChatRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -86,7 +86,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/dashboard'
     | '/widget/$companyId'
-    | '/api/widget/chat'
+    | '/api/public/widget/chat'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -94,7 +94,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/dashboard'
     | '/widget/$companyId'
-    | '/api/widget/chat'
+    | '/api/public/widget/chat'
   id:
     | '__root__'
     | '/'
@@ -103,7 +103,7 @@ export interface FileRouteTypes {
     | '/sitemap.xml'
     | '/_authenticated/dashboard'
     | '/widget/$companyId'
-    | '/api/widget/chat'
+    | '/api/public/widget/chat'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -112,7 +112,7 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   WidgetCompanyIdRoute: typeof WidgetCompanyIdRoute
-  ApiWidgetChatRoute: typeof ApiWidgetChatRoute
+  ApiPublicWidgetChatRoute: typeof ApiPublicWidgetChatRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -159,11 +159,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedDashboardRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
-    '/api/widget/chat': {
-      id: '/api/widget/chat'
-      path: '/api/widget/chat'
-      fullPath: '/api/widget/chat'
-      preLoaderRoute: typeof ApiWidgetChatRouteImport
+    '/api/public/widget/chat': {
+      id: '/api/public/widget/chat'
+      path: '/api/public/widget/chat'
+      fullPath: '/api/public/widget/chat'
+      preLoaderRoute: typeof ApiPublicWidgetChatRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -186,7 +186,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   WidgetCompanyIdRoute: WidgetCompanyIdRoute,
-  ApiWidgetChatRoute: ApiWidgetChatRoute,
+  ApiPublicWidgetChatRoute: ApiPublicWidgetChatRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
