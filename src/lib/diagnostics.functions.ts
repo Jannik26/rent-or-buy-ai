@@ -96,5 +96,5 @@ export const runDiagnostics = createServerFn({ method: "POST" })
     }
 
     return { checkedAt, companyId, supabase, lovableApiKey, aiModel, lastError, lastSuccess };
-  },
-);
+  });
+
