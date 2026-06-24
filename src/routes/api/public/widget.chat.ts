@@ -269,31 +269,3 @@ async function persistLeadFromTranscript(args: {
     await supabaseAdmin.from("leads").insert(payload);
   }
 }
-
-  const score = scoreFromData(data);
-
-  const payload = {
-    company_id: args.companyId,
-    name: data.name ?? null,
-    email: data.email ?? null,
-    phone: data.phone ?? null,
-    intent: (data.intent ?? "unbekannt") as "kauf" | "miete" | "unbekannt",
-    object_desc: data.object_desc ?? null,
-    budget: data.budget ?? null,
-    financing: data.financing ?? null,
-    timeframe: data.timeframe ?? null,
-    income: data.income ?? null,
-    household_size: data.household_size ?? null,
-    move_in_date: data.move_in_date ?? null,
-    score,
-    status: data._status ?? "neu",
-    qualification_summary: transcript.slice(-2).map((t) => `${t.role}: ${t.content}`).join(" · ").slice(0, 280),
-    messages: transcript as unknown as never,
-  };
-
-  if (args.leadId) {
-    await supabaseAdmin.from("leads").upsert({ id: args.leadId, ...payload });
-  } else {
-    await supabaseAdmin.from("leads").insert(payload);
-  }
-}
