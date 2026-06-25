@@ -282,7 +282,16 @@ async function persistLeadFromTranscript(args: {
   const data = extractData(args.assistantText);
   const score = scoreFromData(data);
 
-  const intent: LeadIntent | "unbekannt" = data.intent ?? "unbekannt";
+  const ALLOWED_INTENTS = ["kauf", "miete", "verkauf", "bewertung"] as const;
+  const intent: LeadIntent | "unbekannt" =
+    data.intent && (ALLOWED_INTENTS as readonly string[]).includes(data.intent)
+      ? (data.intent as LeadIntent)
+      : "unbekannt";
+  const ALLOWED_STATUS = ["neu", "qualifiziert", "termin"] as const;
+  const status =
+    data._status && (ALLOWED_STATUS as readonly string[]).includes(data._status)
+      ? data._status
+      : "neu";
 
   const payload = {
     company_id: args.companyId,
