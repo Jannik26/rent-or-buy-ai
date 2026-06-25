@@ -3,11 +3,11 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { lovable } from "@/integrations/lovable";
 import { toast } from "sonner";
-import logo from "@/assets/setter-logo.png";
+import logo from "@/assets/estateai-logo.png";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
-    meta: [{ title: "Anmelden – SetterAI" }],
+    meta: [{ title: "Anmelden – EstateAI" }],
   }),
   component: AuthPage,
 });
@@ -70,26 +70,26 @@ function AuthPage() {
       <div className="hidden lg:flex flex-col justify-between bg-gradient-navy text-primary-foreground p-12 relative overflow-hidden">
         <div className="absolute top-0 right-0 size-96 bg-gold/10 rounded-full blur-3xl" />
         <Link to="/" className="flex items-center gap-2.5 relative">
-          <img src={logo} alt="SetterAI" className="size-10" width={40} height={40} />
-          <span className="font-display text-2xl">SetterAI</span>
+          <img src={logo} alt="EstateAI" className="size-10" width={40} height={40} />
+          <span className="font-display text-2xl">EstateAI</span>
         </Link>
         <div className="relative">
           <blockquote className="font-display text-3xl leading-snug">
-            „Wir haben in 30 Tagen 47 qualifizierte Leads bekommen – ohne einen Anruf zu verpassen."
+            „EstateAI qualifiziert Käufer und Verkäufer schon vor dem ersten Anruf – wir gehen nur noch in Termine, die wirklich passen."
           </blockquote>
           <div className="mt-5 text-sm text-primary-foreground/60">
             <div className="font-medium text-primary-foreground">Marcus Hoffmann</div>
             Hoffmann Immobilien GmbH, München
           </div>
         </div>
-        <div className="relative text-xs text-primary-foreground/50">DSGVO-konform · Daten in der EU · SSL-verschlüsselt</div>
+        <div className="relative text-xs text-primary-foreground/50">Mehr aus Immobilien-Leads machen · DSGVO-konform · Daten in der EU</div>
       </div>
 
       <div className="flex items-center justify-center p-6 lg:p-12">
         <div className="w-full max-w-md">
           <Link to="/" className="lg:hidden flex items-center gap-2 mb-8">
             <img src={logo} alt="" className="size-8" width={32} height={32} />
-            <span className="font-display text-xl">SetterAI</span>
+            <span className="font-display text-xl">EstateAI</span>
           </Link>
           <h1 className="font-display text-3xl">{mode === "signin" ? "Willkommen zurück" : "Konto erstellen"}</h1>
           <p className="mt-2 text-sm text-muted-foreground">

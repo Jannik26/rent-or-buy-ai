@@ -4,18 +4,23 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import {
-  ArrowRight, Building2, Code2, Copy, Flame, LogOut, Mail, MessageSquare, Phone, RefreshCcw, Settings, Snowflake, Users, Check,
+  ArrowRight, Building2, Calendar, Code2, Copy, ExternalLink, Flame, LogOut, MessageSquare, RefreshCcw, Settings, Snowflake, Sparkles, Users, Check,
 } from "lucide-react";
-import logo from "@/assets/setter-logo.png";
+import logo from "@/assets/estateai-logo.png";
 import { cn } from "@/lib/utils";
 
-type Lead = {
+export type Lead = {
   id: string;
   name: string | null;
   email: string | null;
   phone: string | null;
-  intent: "kauf" | "miete" | "unbekannt";
+  intent: "kauf" | "verkauf" | "bewertung" | "miete" | "unbekannt";
+  property_type: string | null;
+  location: string | null;
   object_desc: string | null;
+  motivation: string | null;
+  ownership_status: string | null;
+  usage_type: string | null;
   budget: string | null;
   financing: string | null;
   timeframe: string | null;
@@ -23,7 +28,10 @@ type Lead = {
   household_size: string | null;
   move_in_date: string | null;
   score: "hot" | "warm" | "cold";
+  score_numeric: number;
   status: string;
+  ai_summary: string | null;
+  next_action: string | null;
   qualification_summary: string | null;
   messages: { role: string; content: string }[];
   created_at: string;
@@ -32,7 +40,7 @@ type Lead = {
 type Company = { id: string; name: string; greeting: string };
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
-  head: () => ({ meta: [{ title: "Dashboard – SetterAI" }] }),
+  head: () => ({ meta: [{ title: "Dashboard – EstateAI" }] }),
   component: Dashboard,
 });
 
@@ -40,7 +48,6 @@ function Dashboard() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [tab, setTab] = useState<"leads" | "embed" | "settings">("leads");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const companyQuery = useQuery({
     queryKey: ["company"],
@@ -76,18 +83,15 @@ function Dashboard() {
   });
 
   const leads = leadsQuery.data ?? [];
-  const selected = leads.find((l) => l.id === selectedId) ?? leads[0] ?? null;
-
-  useEffect(() => {
-    if (!selectedId && leads[0]) setSelectedId(leads[0].id);
-  }, [leads, selectedId]);
 
   const stats = useMemo(() => {
+    const qualified = leads.filter((l) => l.status === "qualifiziert" || l.status === "termin" || l.score_numeric >= 45).length;
+    const termine = leads.filter((l) => l.status === "termin").length;
     return {
       total: leads.length,
+      qualified,
       hot: leads.filter((l) => l.score === "hot").length,
-      warm: leads.filter((l) => l.score === "warm").length,
-      cold: leads.filter((l) => l.score === "cold").length,
+      termine,
     };
   }, [leads]);
 
@@ -103,7 +107,7 @@ function Dashboard() {
       <aside className="w-64 shrink-0 bg-sidebar text-sidebar-foreground p-5 flex flex-col">
         <Link to="/" className="flex items-center gap-2.5 mb-10">
           <img src={logo} alt="" className="size-9" width={36} height={36} />
-          <span className="font-display text-xl">SetterAI</span>
+          <span className="font-display text-xl">EstateAI</span>
         </Link>
         <nav className="space-y-1 text-sm">
           {[
@@ -137,65 +141,36 @@ function Dashboard() {
       <main className="flex-1 min-w-0 flex flex-col">
         {tab === "leads" && (
           <>
-            <div className="px-8 pt-8 pb-4 border-b border-border">
+            <div className="px-8 pt-8 pb-6 border-b border-border">
               <div className="flex items-center justify-between">
                 <div>
                   <h1 className="font-display text-3xl">Leads</h1>
-                  <p className="text-sm text-muted-foreground mt-1">Qualifizierte Interessenten aus Ihrem KI-Chat.</p>
+                  <p className="text-sm text-muted-foreground mt-1">Qualifizierte Interessenten aus Ihrem EstateAI-Chat.</p>
                 </div>
                 <button onClick={() => leadsQuery.refetch()} className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm hover:bg-accent">
                   <RefreshCcw className="size-4" /> Aktualisieren
                 </button>
               </div>
               <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-3">
-                <Stat label="Alle Leads" value={stats.total} />
-                <Stat label="🔥 Hot" value={stats.hot} tone="hot" />
-                <Stat label="🟡 Warm" value={stats.warm} tone="warm" />
-                <Stat label="❄️ Cold" value={stats.cold} tone="cold" />
+                <Stat label="Neue Leads" value={stats.total} icon={Sparkles} />
+                <Stat label="Qualifizierte Leads" value={stats.qualified} icon={MessageSquare} tone="warm" />
+                <Stat label="🔥 Heiße Leads" value={stats.hot} tone="hot" icon={Flame} />
+                <Stat label="Termine" value={stats.termine} icon={Calendar} tone="cold" />
               </div>
             </div>
 
-            <div className="flex-1 min-h-0 grid lg:grid-cols-[420px_1fr]">
-              <div className="border-r border-border overflow-y-auto">
-                {leads.length === 0 && (
-                  <div className="p-10 text-center">
-                    <Users className="size-10 mx-auto text-muted-foreground/40" />
-                    <p className="mt-4 text-sm text-muted-foreground">Noch keine Leads. Sobald jemand mit Ihrem Chat-Widget spricht, erscheint er hier.</p>
-                    <button onClick={() => setTab("embed")} className="mt-4 text-sm font-medium text-foreground inline-flex items-center gap-1.5">
-                      Widget einbetten <ArrowRight className="size-3.5" />
-                    </button>
-                  </div>
-                )}
-                {leads.map((l) => (
-                  <button
-                    key={l.id}
-                    onClick={() => setSelectedId(l.id)}
-                    className={cn(
-                      "w-full text-left px-5 py-4 border-b border-border hover:bg-accent/50 transition flex gap-3",
-                      selected?.id === l.id && "bg-accent",
-                    )}
-                  >
-                    <ScoreBadge score={l.score} />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="font-medium truncate">{l.name ?? "Anonymer Besucher"}</div>
-                        <div className="text-[11px] text-muted-foreground shrink-0">{relTime(l.created_at)}</div>
-                      </div>
-                      <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-2">
-                        <IntentChip intent={l.intent} />
-                        {l.budget && <span className="truncate">· {l.budget}</span>}
-                      </div>
-                      {l.qualification_summary && (
-                        <div className="text-xs text-muted-foreground mt-1.5 line-clamp-2">{l.qualification_summary}</div>
-                      )}
-                    </div>
+            <div className="flex-1 min-h-0 overflow-y-auto p-8">
+              {leads.length === 0 ? (
+                <div className="p-16 text-center rounded-2xl border border-dashed border-border bg-card">
+                  <Users className="size-10 mx-auto text-muted-foreground/40" />
+                  <p className="mt-4 text-sm text-muted-foreground">Noch keine Leads. Sobald jemand mit Ihrem EstateAI-Chat spricht, erscheint er hier.</p>
+                  <button onClick={() => setTab("embed")} className="mt-4 text-sm font-medium text-foreground inline-flex items-center gap-1.5">
+                    Widget einbetten <ArrowRight className="size-3.5" />
                   </button>
-                ))}
-              </div>
-
-              <div className="overflow-y-auto bg-muted/20">
-                {selected ? <LeadDetail lead={selected} /> : null}
-              </div>
+                </div>
+              ) : (
+                <LeadsTable leads={leads} />
+              )}
             </div>
           </>
         )}
@@ -207,116 +182,112 @@ function Dashboard() {
   );
 }
 
-function Stat({ label, value, tone }: { label: string; value: number; tone?: "hot" | "warm" | "cold" }) {
-  const colors = tone === "hot" ? "text-destructive" : tone === "warm" ? "text-warning" : tone === "cold" ? "text-info" : "text-foreground";
+function LeadsTable({ leads }: { leads: Lead[] }) {
   return (
-    <div className="rounded-xl border border-border bg-card p-4">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className={cn("mt-1 font-display text-2xl", colors)}>{value}</div>
+    <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-soft">
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
+            <tr>
+              <th className="text-left px-4 py-3 font-medium">Name</th>
+              <th className="text-left px-4 py-3 font-medium">Typ</th>
+              <th className="text-left px-4 py-3 font-medium">Immobilie</th>
+              <th className="text-left px-4 py-3 font-medium">Motivation</th>
+              <th className="text-left px-4 py-3 font-medium">Zeitraum</th>
+              <th className="text-left px-4 py-3 font-medium">Score</th>
+              <th className="text-left px-4 py-3 font-medium">Status</th>
+              <th className="px-4 py-3"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {leads.map((l) => (
+              <tr key={l.id} className="border-t border-border hover:bg-accent/30 transition">
+                <td className="px-4 py-3">
+                  <div className="font-medium">{l.name ?? "Anonymer Besucher"}</div>
+                  <div className="text-xs text-muted-foreground">{l.email ?? l.phone ?? "—"}</div>
+                </td>
+                <td className="px-4 py-3"><IntentChip intent={l.intent} /></td>
+                <td className="px-4 py-3 text-muted-foreground">{l.property_type ?? l.object_desc ?? "—"}</td>
+                <td className="px-4 py-3 text-muted-foreground truncate max-w-[180px]">{l.motivation ?? "—"}</td>
+                <td className="px-4 py-3 text-muted-foreground">{l.timeframe ?? l.move_in_date ?? "—"}</td>
+                <td className="px-4 py-3"><ScorePill score={l.score} num={l.score_numeric} /></td>
+                <td className="px-4 py-3"><StatusBadge status={l.status} /></td>
+                <td className="px-4 py-3 text-right">
+                  <Link
+                    to="/leads/$leadId"
+                    params={{ leadId: l.id }}
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground hover:text-gold"
+                  >
+                    Details <ExternalLink className="size-3.5" />
+                  </Link>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
 
-function ScoreBadge({ score }: { score: "hot" | "warm" | "cold" }) {
+function Stat({ label, value, tone, icon: Icon }: { label: string; value: number; tone?: "hot" | "warm" | "cold"; icon: typeof Flame }) {
+  const colors = tone === "hot" ? "text-destructive bg-destructive/10" : tone === "warm" ? "text-warning bg-warning/15" : tone === "cold" ? "text-info bg-info/10" : "text-primary bg-accent";
+  return (
+    <div className="rounded-xl border border-border bg-card p-4 flex items-center gap-4">
+      <div className={cn("size-10 rounded-lg grid place-items-center shrink-0", colors)}>
+        <Icon className="size-5" />
+      </div>
+      <div>
+        <div className="text-xs text-muted-foreground">{label}</div>
+        <div className="mt-0.5 font-display text-2xl">{value}</div>
+      </div>
+    </div>
+  );
+}
+
+export function ScorePill({ score, num }: { score: "hot" | "warm" | "cold"; num: number }) {
   const cfg = {
-    hot: { bg: "bg-destructive/10 text-destructive", Icon: Flame },
-    warm: { bg: "bg-warning/15 text-warning", Icon: MessageSquare },
-    cold: { bg: "bg-info/10 text-info", Icon: Snowflake },
+    hot: { cls: "bg-destructive/10 text-destructive", label: "HOT", Icon: Flame },
+    warm: { cls: "bg-warning/15 text-warning", label: "WARM", Icon: MessageSquare },
+    cold: { cls: "bg-info/10 text-info", label: "COLD", Icon: Snowflake },
   }[score];
   const Icon = cfg.Icon;
   return (
-    <div className={cn("size-9 rounded-lg grid place-items-center shrink-0", cfg.bg)}>
-      <Icon className="size-4" />
-    </div>
+    <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold", cfg.cls)}>
+      <Icon className="size-3.5" /> {cfg.label} · {num}/100
+    </span>
   );
 }
 
-function IntentChip({ intent }: { intent: "kauf" | "miete" | "unbekannt" }) {
-  if (intent === "unbekannt") return <span className="text-muted-foreground">Noch unklar</span>;
-  return (
-    <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide",
-      intent === "kauf" ? "bg-gold/20 text-gold-foreground" : "bg-secondary/10 text-secondary")}>{intent}</span>
-  );
+export function StatusBadge({ status }: { status: string }) {
+  const map: Record<string, string> = {
+    neu: "bg-muted text-muted-foreground",
+    qualifiziert: "bg-secondary/10 text-secondary",
+    termin: "bg-gold/15 text-gold-foreground",
+  };
+  const cls = map[status] ?? "bg-muted text-muted-foreground";
+  return <span className={cn("rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wide font-medium", cls)}>{status}</span>;
 }
 
-function LeadDetail({ lead }: { lead: Lead }) {
+export function IntentChip({ intent }: { intent: Lead["intent"] }) {
+  if (intent === "unbekannt") return <span className="text-muted-foreground text-xs">Noch unklar</span>;
+  const map: Record<string, string> = {
+    kauf: "bg-secondary/10 text-secondary",
+    verkauf: "bg-gold/15 text-gold-foreground",
+    bewertung: "bg-info/10 text-info",
+    miete: "bg-accent text-primary",
+  };
   return (
-    <div className="p-8 max-w-3xl">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2 className="font-display text-2xl">{lead.name ?? "Anonymer Besucher"}</h2>
-          <div className="mt-1 text-sm text-muted-foreground">Eingegangen {new Date(lead.created_at).toLocaleString("de-DE")}</div>
-        </div>
-        <ScoreBadge score={lead.score} />
-      </div>
-
-      <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {lead.email && <ContactRow icon={Mail} label="E-Mail" value={lead.email} href={`mailto:${lead.email}`} />}
-        {lead.phone && <ContactRow icon={Phone} label="Telefon" value={lead.phone} href={`tel:${lead.phone}`} />}
-      </div>
-
-      <div className="mt-6 rounded-xl border border-border bg-card p-5">
-        <h3 className="font-display text-lg mb-3">Qualifizierung</h3>
-        <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 text-sm">
-          <Field label="Interesse" value={lead.intent === "unbekannt" ? "—" : lead.intent.toUpperCase()} />
-          <Field label="Objekt" value={lead.object_desc} />
-          <Field label="Budget" value={lead.budget} />
-          {lead.intent === "kauf" && <>
-            <Field label="Finanzierung" value={lead.financing} />
-            <Field label="Kaufzeitraum" value={lead.timeframe} />
-          </>}
-          {lead.intent === "miete" && <>
-            <Field label="Einkommen" value={lead.income} />
-            <Field label="Personen" value={lead.household_size} />
-            <Field label="Einzug" value={lead.move_in_date} />
-          </>}
-        </dl>
-      </div>
-
-      <div className="mt-6 rounded-xl border border-border bg-card p-5">
-        <h3 className="font-display text-lg mb-3">Gesprächsverlauf</h3>
-        <div className="space-y-3">
-          {(lead.messages ?? []).map((m, i) => (
-            <div key={i} className={cn("flex", m.role === "user" ? "justify-end" : "justify-start")}>
-              <div className={cn(
-                "max-w-[80%] rounded-xl px-3.5 py-2 text-sm",
-                m.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted text-foreground",
-              )}>
-                {m.content}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ContactRow({ icon: Icon, label, value, href }: { icon: typeof Mail; label: string; value: string; href: string }) {
-  return (
-    <a href={href} className="flex items-center gap-3 rounded-xl border border-border bg-card p-3.5 hover:bg-accent transition">
-      <div className="size-9 rounded-lg bg-accent grid place-items-center text-primary"><Icon className="size-4" /></div>
-      <div className="min-w-0">
-        <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</div>
-        <div className="text-sm font-medium truncate">{value}</div>
-      </div>
-    </a>
-  );
-}
-
-function Field({ label, value }: { label: string; value: string | null }) {
-  return (
-    <div>
-      <dt className="text-xs uppercase tracking-wide text-muted-foreground">{label}</dt>
-      <dd className="mt-0.5 text-foreground">{value || "—"}</dd>
-    </div>
+    <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide", map[intent])}>
+      {intent === "kauf" ? "Käufer" : intent === "verkauf" ? "Verkäufer" : intent === "bewertung" ? "Bewertung" : "Mieter"}
+    </span>
   );
 }
 
 function EmbedTab({ companyId }: { companyId: string }) {
   const [copied, setCopied] = useState(false);
   const base = typeof window !== "undefined" ? window.location.origin : "";
-  const snippet = `<script src="${base}/embed.js" data-setterai="${companyId}" defer></script>`;
+  const snippet = `<script src="${base}/embed.js" data-estateai="${companyId}" defer></script>`;
   function copy() {
     navigator.clipboard.writeText(snippet);
     setCopied(true);
@@ -326,7 +297,7 @@ function EmbedTab({ companyId }: { companyId: string }) {
   return (
     <div className="p-8 max-w-3xl">
       <h1 className="font-display text-3xl">Widget einbetten</h1>
-      <p className="mt-2 text-sm text-muted-foreground">Fügen Sie diesen einen Code-Schnipsel vor <code>{"</body>"}</code> in Ihre Website ein. Das Chat-Widget erscheint automatisch unten rechts.</p>
+      <p className="mt-2 text-sm text-muted-foreground">Fügen Sie diesen Code-Schnipsel vor <code>{"</body>"}</code> in Ihre Website ein. Das EstateAI-Widget erscheint automatisch unten rechts.</p>
       <div className="mt-6 rounded-2xl bg-primary text-primary-foreground p-5 font-mono text-sm relative overflow-x-auto">
         <pre className="whitespace-pre-wrap break-all">{snippet}</pre>
         <button onClick={copy} className="absolute top-3 right-3 inline-flex items-center gap-1.5 rounded-lg bg-gold text-gold-foreground px-3 py-1.5 text-xs font-medium">
@@ -338,7 +309,7 @@ function EmbedTab({ companyId }: { companyId: string }) {
         {[
           { i: 1, t: "Code kopieren", d: "Den obigen Schnipsel in die Zwischenablage." },
           { i: 2, t: "In Ihre Website einfügen", d: "Vor dem schließenden </body>-Tag." },
-          { i: 3, t: "Fertig", d: "Besucher chatten ab sofort mit SetterAI." },
+          { i: 3, t: "Fertig", d: "Besucher chatten ab sofort mit EstateAI." },
         ].map((s) => (
           <div key={s.i} className="rounded-xl border border-border bg-card p-4">
             <div className="size-8 rounded-lg bg-gradient-navy text-gold grid place-items-center font-display">{s.i}</div>
@@ -364,6 +335,11 @@ function SettingsTab({ company, onSaved }: { company: Company; onSaved: () => vo
   const [greeting, setGreeting] = useState(company.greeting);
   const [busy, setBusy] = useState(false);
 
+  useEffect(() => {
+    setName(company.name);
+    setGreeting(company.greeting);
+  }, [company.id, company.name, company.greeting]);
+
   async function save(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -376,7 +352,7 @@ function SettingsTab({ company, onSaved }: { company: Company; onSaved: () => vo
   return (
     <div className="p-8 max-w-2xl">
       <h1 className="font-display text-3xl">Einstellungen</h1>
-      <p className="mt-2 text-sm text-muted-foreground">Personalisieren Sie Ihren KI-Assistenten.</p>
+      <p className="mt-2 text-sm text-muted-foreground">Personalisieren Sie Ihren EstateAI-Assistenten.</p>
       <form onSubmit={save} className="mt-8 space-y-5">
         <div>
           <label className="text-sm font-medium">Unternehmensname</label>
@@ -393,12 +369,4 @@ function SettingsTab({ company, onSaved }: { company: Company; onSaved: () => vo
       </form>
     </div>
   );
-}
-
-function relTime(iso: string) {
-  const diff = (Date.now() - new Date(iso).getTime()) / 1000;
-  if (diff < 60) return "gerade eben";
-  if (diff < 3600) return `vor ${Math.floor(diff / 60)} min`;
-  if (diff < 86400) return `vor ${Math.floor(diff / 3600)} h`;
-  return `vor ${Math.floor(diff / 86400)} Tagen`;
 }

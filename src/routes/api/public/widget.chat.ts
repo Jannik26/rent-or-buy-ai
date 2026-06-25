@@ -70,8 +70,6 @@ export const Route = createFileRoute("/api/public/widget/chat")({
             );
           }
 
-
-
           const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
           const { data: company } = await supabaseAdmin
@@ -88,7 +86,6 @@ export const Route = createFileRoute("/api/public/widget/chat")({
           }
 
           // ---- Rate limit (anti-spam / anti credit-abuse) ----
-          // Per (company + bucketKey) per minute. bucketKey = leadId or client IP.
           const ip =
             request.headers.get("cf-connecting-ip") ??
             request.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
@@ -98,31 +95,26 @@ export const Route = createFileRoute("/api/public/widget/chat")({
           const PER_MINUTE_LIMIT = 20;
           const PER_COMPANY_LIMIT = 120;
 
-          // Upsert + read counter atomically (best-effort).
-          const { data: throttleRow } = await supabaseAdmin
+          const { data: existingThrottle } = await supabaseAdmin
+            .from("widget_throttle")
+            .select("count")
+            .eq("company_id", company.id)
+            .eq("bucket_key", bucketKey)
+            .eq("minute_bucket", minuteBucket)
+            .maybeSingle();
+          const nextCount = (existingThrottle?.count ?? 0) + 1;
+          await supabaseAdmin
             .from("widget_throttle")
             .upsert(
-              { company_id: company.id, bucket_key: bucketKey, minute_bucket: minuteBucket, count: 1 },
-              { onConflict: "company_id,bucket_key,minute_bucket", ignoreDuplicates: false },
-            )
-            .select("count")
-            .maybeSingle();
-          if (throttleRow && throttleRow.count > 1) {
-            await supabaseAdmin
-              .from("widget_throttle")
-              .update({ count: throttleRow.count + 1 })
-              .eq("company_id", company.id)
-              .eq("bucket_key", bucketKey)
-              .eq("minute_bucket", minuteBucket);
-          }
-          const currentCount = (throttleRow?.count ?? 1) + (throttleRow && throttleRow.count > 1 ? 1 : 0);
-          if (currentCount > PER_MINUTE_LIMIT) {
+              { company_id: company.id, bucket_key: bucketKey, minute_bucket: minuteBucket, count: nextCount },
+              { onConflict: "company_id,bucket_key,minute_bucket" },
+            );
+          if (nextCount > PER_MINUTE_LIMIT) {
             return new Response(
               JSON.stringify({ error: "Zu viele Anfragen. Bitte einen Moment warten." }),
               { status: 429, headers: { ...corsHeaders, "content-type": "application/json" } },
             );
           }
-          // Per-company per-minute cap across all visitors.
           const { count: companyCount } = await supabaseAdmin
             .from("widget_throttle")
             .select("*", { count: "exact", head: true })
@@ -134,8 +126,6 @@ export const Route = createFileRoute("/api/public/widget/chat")({
               { status: 429, headers: { ...corsHeaders, "content-type": "application/json" } },
             );
           }
-
-
 
           const gateway = createLovableAiGatewayProvider(key);
           const model = gateway("google/gemini-3-flash-preview");
@@ -176,7 +166,6 @@ export const Route = createFileRoute("/api/public/widget/chat")({
               } catch (err) {
                 console.error("[widget] persist error", err);
               }
-
             },
           });
 
@@ -209,19 +198,29 @@ export const Route = createFileRoute("/api/public/widget/chat")({
 
 const DATA_RE = /<<DATA>>([\s\S]*?)<<END>>/g;
 
+type LeadIntent = "kauf" | "verkauf" | "bewertung" | "miete";
+
 type ExtractedData = {
   name?: string;
   email?: string;
   phone?: string;
-  intent?: "kauf" | "miete";
+  intent?: LeadIntent;
+  property_type?: string;
+  location?: string;
   object_desc?: string;
+  motivation?: string;
+  ownership_status?: string;
+  usage_type?: string;
   budget?: string;
   financing?: string;
   timeframe?: string;
   income?: string;
   household_size?: string;
   move_in_date?: string;
+  _summary?: string;
+  _next_action?: string;
   _score?: "hot" | "warm" | "cold";
+  _score_num?: number;
   _status?: string;
 };
 
@@ -245,19 +244,22 @@ function extractData(text: string): ExtractedData {
   return merged;
 }
 
-function scoreFromData(d: ExtractedData): "hot" | "warm" | "cold" {
-  if (d._score) return d._score;
+function scoreFromData(d: ExtractedData): { label: "hot" | "warm" | "cold"; num: number } {
   const has = (v?: string) => Boolean(v && v.trim().length > 0);
-  const contactCount = [has(d.name), has(d.email) || has(d.phone)].filter(Boolean).length;
-  const qualCount = [
-    has(d.budget),
-    has(d.intent),
-    has(d.object_desc) || has(d.move_in_date),
-    has(d.financing) || has(d.income),
-  ].filter(Boolean).length;
-  if (contactCount >= 2 && qualCount >= 3) return "hot";
-  if (contactCount >= 1 && qualCount >= 2) return "warm";
-  return "cold";
+  const contactPts =
+    (has(d.name) ? 15 : 0) +
+    (has(d.email) ? 20 : 0) +
+    (has(d.phone) ? 15 : 0);
+  const qualPts =
+    (has(d.intent as string) ? 10 : 0) +
+    (has(d.property_type) || has(d.object_desc) ? 10 : 0) +
+    (has(d.location) ? 5 : 0) +
+    (has(d.budget) ? 10 : 0) +
+    (has(d.timeframe) || has(d.move_in_date) ? 8 : 0) +
+    (has(d.financing) || has(d.usage_type) || has(d.motivation) ? 7 : 0);
+  const num = Math.max(0, Math.min(100, d._score_num ?? contactPts + qualPts));
+  const label = d._score ?? (num >= 75 ? "hot" : num >= 45 ? "warm" : "cold");
+  return { label, num };
 }
 
 async function persistLeadFromTranscript(args: {
@@ -268,7 +270,6 @@ async function persistLeadFromTranscript(args: {
 }) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
-  // Build clean transcript (strip DATA markers)
   const transcript = args.messages.map((m) => ({
     role: m.role,
     content: partsToText(m.parts).replace(DATA_RE, "").trim(),
@@ -278,32 +279,50 @@ async function persistLeadFromTranscript(args: {
     content: args.assistantText.replace(DATA_RE, "").trim(),
   });
 
-  // Collect data ONLY from the AI assistant's own response — never trust
-  // <<DATA>> markers smuggled in by the client in user messages.
   const data = extractData(args.assistantText);
   const score = scoreFromData(data);
+
+  const ALLOWED_INTENTS = ["kauf", "miete", "verkauf", "bewertung"] as const;
+  const intent: LeadIntent | "unbekannt" =
+    data.intent && (ALLOWED_INTENTS as readonly string[]).includes(data.intent)
+      ? (data.intent as LeadIntent)
+      : "unbekannt";
+  const ALLOWED_STATUS = ["neu", "qualifiziert", "termin"] as const;
+  const status =
+    data._status && (ALLOWED_STATUS as readonly string[]).includes(data._status)
+      ? data._status
+      : "neu";
 
   const payload = {
     company_id: args.companyId,
     name: data.name ?? null,
     email: data.email ?? null,
     phone: data.phone ?? null,
-    intent: (data.intent ?? "unbekannt") as "kauf" | "miete" | "unbekannt",
+    intent: intent as never,
+    property_type: data.property_type ?? null,
+    location: data.location ?? null,
     object_desc: data.object_desc ?? null,
+    motivation: data.motivation ?? null,
+    ownership_status: data.ownership_status ?? null,
+    usage_type: data.usage_type ?? null,
     budget: data.budget ?? null,
     financing: data.financing ?? null,
     timeframe: data.timeframe ?? null,
     income: data.income ?? null,
     household_size: data.household_size ?? null,
     move_in_date: data.move_in_date ?? null,
-    score,
-    status: data._status ?? "neu",
-    qualification_summary: transcript.slice(-2).map((t) => `${t.role}: ${t.content}`).join(" · ").slice(0, 280),
+    score: score.label,
+    score_numeric: score.num,
+    status,
+    ai_summary: data._summary ?? null,
+    next_action: data._next_action ?? null,
+    qualification_summary:
+      data._summary ??
+      transcript.slice(-2).map((t) => `${t.role}: ${t.content}`).join(" · ").slice(0, 280),
     messages: transcript as unknown as never,
   };
 
   if (args.leadId) {
-    // Cross-company guard: refuse to upsert a lead that already belongs to a different company.
     const { data: existing } = await supabaseAdmin
       .from("leads")
       .select("company_id")
