@@ -313,7 +313,7 @@ async function persistLeadFromTranscript(args: {
     move_in_date: data.move_in_date ?? null,
     score: score.label,
     score_numeric: score.num,
-    status: data._status ?? "neu",
+    status,
     ai_summary: data._summary ?? null,
     next_action: data._next_action ?? null,
     qualification_summary:
