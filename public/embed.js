@@ -1,8 +1,9 @@
 (function () {
   var script = document.currentScript;
-  var companyId = script && script.getAttribute("data-setterai");
+  var companyId =
+    (script && (script.getAttribute("data-estateai") || script.getAttribute("data-setterai"))) || null;
   if (!companyId) {
-    console.error("[SetterAI] Missing data-setterai attribute on script tag");
+    console.error("[EstateAI] Missing data-estateai attribute on script tag");
     return;
   }
   var origin = new URL(script.src).origin;
@@ -25,7 +26,7 @@
   // Iframe panel
   var frame = document.createElement("iframe");
   frame.src = origin + "/widget/" + encodeURIComponent(companyId);
-  frame.title = "SetterAI Chat";
+  frame.title = "EstateAI Chat";
   frame.allow = "clipboard-write";
   frame.style.cssText = [
     "position:fixed", "bottom:90px", "right:20px", "z-index:2147483645",
