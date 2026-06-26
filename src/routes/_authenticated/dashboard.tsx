@@ -4,7 +4,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import {
-  ArrowRight, Building2, Calendar, Code2, Copy, ExternalLink, Flame, LogOut, MessageSquare, RefreshCcw, Settings, Snowflake, Sparkles, Users, Check,
+  ArrowRight, ArrowUpRight, Bell, Building2, Calendar, Check, ChevronRight, Code2, Copy, ExternalLink,
+  Flame, Home, LayoutDashboard, LogOut, Search, Settings, Snowflake, Sparkles, TrendingUp, Users,
 } from "lucide-react";
 import logo from "@/assets/estateai-logo.png";
 import { cn } from "@/lib/utils";
@@ -38,6 +39,7 @@ export type Lead = {
 };
 
 type Company = { id: string; name: string; greeting: string };
+type Profile = { full_name: string | null; email: string | null; company: string | null };
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
   head: () => ({ meta: [{ title: "Dashboard – EstateAI" }] }),
@@ -48,6 +50,7 @@ function Dashboard() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [tab, setTab] = useState<"leads" | "embed" | "settings">("leads");
+  const [search, setSearch] = useState("");
 
   const companyQuery = useQuery({
     queryKey: ["company"],
@@ -55,45 +58,62 @@ function Dashboard() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("not authed");
       const { data, error } = await supabase
-        .from("companies")
-        .select("id, name, greeting")
-        .eq("owner_id", user.id)
-        .maybeSingle();
+        .from("companies").select("id, name, greeting").eq("owner_id", user.id).maybeSingle();
       if (error) throw error;
       return data as Company | null;
     },
   });
-
   const company = companyQuery.data;
+
+  const profileQuery = useQuery({
+    queryKey: ["profile"],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return null;
+      const { data } = await supabase
+        .from("profiles").select("full_name, email, company").eq("id", user.id).maybeSingle();
+      return (data ?? { full_name: null, email: user.email, company: null }) as Profile;
+    },
+  });
+  const profile = profileQuery.data;
 
   const leadsQuery = useQuery({
     queryKey: ["leads", company?.id],
     queryFn: async () => {
       if (!company) return [];
       const { data, error } = await supabase
-        .from("leads")
-        .select("*")
-        .eq("company_id", company.id)
-        .order("created_at", { ascending: false });
+        .from("leads").select("*").eq("company_id", company.id).order("created_at", { ascending: false });
       if (error) throw error;
       return (data ?? []) as unknown as Lead[];
     },
     enabled: !!company,
-    refetchInterval: 8000,
+    refetchInterval: 12000,
   });
-
   const leads = leadsQuery.data ?? [];
 
   const stats = useMemo(() => {
-    const qualified = leads.filter((l) => l.status === "qualifiziert" || l.status === "termin" || l.score_numeric >= 45).length;
-    const termine = leads.filter((l) => l.status === "termin").length;
+    const now = Date.now();
+    const last7 = leads.filter((l) => now - new Date(l.created_at).getTime() < 7 * 864e5);
+    const qualified = leads.filter((l) => l.status === "qualifiziert" || l.status === "termin" || l.score_numeric >= 60).length;
     return {
       total: leads.length,
-      qualified,
+      newWeek: last7.length,
       hot: leads.filter((l) => l.score === "hot").length,
-      termine,
+      termine: leads.filter((l) => l.status === "termin").length,
+      conversion: leads.length ? Math.round((qualified / leads.length) * 100) : 0,
     };
   }, [leads]);
+
+  const filteredLeads = useMemo(() => {
+    if (!search.trim()) return leads;
+    const q = search.toLowerCase();
+    return leads.filter((l) =>
+      (l.name ?? "").toLowerCase().includes(q) ||
+      (l.email ?? "").toLowerCase().includes(q) ||
+      (l.location ?? "").toLowerCase().includes(q) ||
+      (l.property_type ?? "").toLowerCase().includes(q),
+    );
+  }, [leads, search]);
 
   async function signOut() {
     await qc.cancelQueries();
@@ -102,153 +122,321 @@ function Dashboard() {
     navigate({ to: "/auth", replace: true });
   }
 
+  const initials = (profile?.full_name ?? profile?.email ?? "EA")
+    .split(/[\s@]/).filter(Boolean).slice(0, 2).map((s) => s[0]?.toUpperCase()).join("");
+
   return (
-    <div className="min-h-screen flex bg-background">
-      <aside className="w-64 shrink-0 bg-sidebar text-sidebar-foreground p-5 flex flex-col">
-        <Link to="/" className="flex items-center gap-2.5 mb-10">
-          <img src={logo} alt="" className="size-9" width={36} height={36} />
-          <span className="font-display text-xl">EstateAI</span>
+    <div className="min-h-screen flex bg-muted/30">
+      {/* Sidebar */}
+      <aside className="hidden lg:flex w-64 shrink-0 bg-sidebar text-sidebar-foreground flex-col border-r border-sidebar-border">
+        <Link to="/" className="flex items-center gap-2.5 px-6 h-16 border-b border-sidebar-border">
+          <img src={logo} alt="" className="size-8" width={32} height={32} />
+          <span className="font-display text-lg">EstateAI</span>
         </Link>
-        <nav className="space-y-1 text-sm">
-          {[
-            { k: "leads" as const, l: "Leads", i: Users },
-            { k: "embed" as const, l: "Widget einbetten", i: Code2 },
-            { k: "settings" as const, l: "Einstellungen", i: Settings },
-          ].map(({ k, l, i: Icon }) => (
-            <button
-              key={k}
-              onClick={() => setTab(k)}
-              className={cn(
-                "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition",
-                tab === k ? "bg-sidebar-accent text-sidebar-accent-foreground" : "hover:bg-sidebar-accent/50 text-sidebar-foreground/70",
-              )}
-            >
-              <Icon className="size-4" /> {l}
-            </button>
-          ))}
+        <nav className="flex-1 px-3 py-6 space-y-0.5 text-sm">
+          <SidebarSection label="Workspace" />
+          <NavBtn active={tab === "leads"} icon={LayoutDashboard} onClick={() => setTab("leads")}>Dashboard</NavBtn>
+          <NavBtn active={tab === "leads"} icon={Users} onClick={() => setTab("leads")} badge={stats.total}>Leads</NavBtn>
+          <NavBtn icon={Calendar} onClick={() => setTab("leads")} badge={stats.termine || undefined}>Termine</NavBtn>
+          <NavBtn icon={Home} onClick={() => setTab("leads")}>Immobilien</NavBtn>
+
+          <div className="h-px bg-sidebar-border my-4" />
+          <SidebarSection label="Setup" />
+          <NavBtn active={tab === "embed"} icon={Code2} onClick={() => setTab("embed")}>Widget einbetten</NavBtn>
+          <NavBtn active={tab === "settings"} icon={Settings} onClick={() => setTab("settings")}>Einstellungen</NavBtn>
         </nav>
-        <div className="mt-auto pt-5 border-t border-sidebar-border">
-          <div className="px-3 py-2 text-xs">
-            <div className="text-sidebar-foreground/50">Unternehmen</div>
-            <div className="font-medium mt-0.5 truncate">{company?.name ?? "—"}</div>
+        <div className="px-3 pb-4 pt-2 border-t border-sidebar-border">
+          <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg">
+            <div className="size-9 rounded-full bg-gold text-gold-foreground grid place-items-center text-xs font-semibold shrink-0">
+              {initials || "EA"}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-medium truncate">{profile?.full_name ?? "Makler"}</div>
+              <div className="text-[11px] text-sidebar-foreground/60 truncate">{profile?.company ?? company?.name ?? "—"}</div>
+            </div>
+            <button onClick={signOut} title="Abmelden" className="size-8 grid place-items-center rounded-md hover:bg-sidebar-accent/60 text-sidebar-foreground/70">
+              <LogOut className="size-4" />
+            </button>
           </div>
-          <button onClick={signOut} className="mt-2 w-full flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-sidebar-accent/50 text-sidebar-foreground/70 text-sm">
-            <LogOut className="size-4" /> Abmelden
-          </button>
         </div>
       </aside>
 
-      <main className="flex-1 min-w-0 flex flex-col">
-        {tab === "leads" && (
-          <>
-            <div className="px-8 pt-8 pb-6 border-b border-border">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h1 className="font-display text-3xl">Leads</h1>
-                  <p className="text-sm text-muted-foreground mt-1">Qualifizierte Interessenten aus Ihrem EstateAI-Chat.</p>
+      <div className="flex-1 min-w-0 flex flex-col">
+        {/* Topbar */}
+        <header className="h-16 bg-card border-b border-border flex items-center gap-4 px-4 sm:px-8 sticky top-0 z-20">
+          <Link to="/" className="lg:hidden flex items-center gap-2">
+            <img src={logo} alt="" className="size-7" width={28} height={28} />
+            <span className="font-display text-base">EstateAI</span>
+          </Link>
+          <div className="hidden md:flex items-center text-sm text-muted-foreground gap-1.5">
+            <span>{company?.name ?? "Workspace"}</span>
+            <ChevronRight className="size-3.5" />
+            <span className="text-foreground font-medium">
+              {tab === "leads" ? "Dashboard" : tab === "embed" ? "Widget" : "Einstellungen"}
+            </span>
+          </div>
+          <div className="flex-1" />
+          <div className="hidden sm:flex items-center gap-2 bg-muted/60 rounded-lg px-3 py-2 w-72">
+            <Search className="size-4 text-muted-foreground" />
+            <input
+              value={search} onChange={(e) => setSearch(e.target.value)}
+              placeholder="Leads durchsuchen…"
+              className="bg-transparent text-sm outline-none flex-1 placeholder:text-muted-foreground"
+            />
+          </div>
+          <button className="size-9 grid place-items-center rounded-lg hover:bg-muted relative">
+            <Bell className="size-4" />
+            {stats.hot > 0 && <span className="absolute top-2 right-2 size-1.5 rounded-full bg-destructive" />}
+          </button>
+          <div className="size-9 rounded-full bg-primary text-primary-foreground grid place-items-center text-xs font-semibold lg:hidden">
+            {initials || "EA"}
+          </div>
+        </header>
+
+        <main className="flex-1 min-w-0 overflow-y-auto">
+          {tab === "leads" && (
+            <div className="p-4 sm:p-8 max-w-[1600px] mx-auto w-full">
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-4 sm:flex sm:justify-between">
+                <div className="min-w-0">
+                  <h1 className="font-display text-2xl sm:text-3xl truncate">
+                    Willkommen zurück{profile?.full_name ? `, ${profile.full_name.split(" ")[0]}` : ""}
+                  </h1>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {stats.newWeek > 0 ? `${stats.newWeek} neue Leads in den letzten 7 Tagen.` : "Noch keine neuen Leads diese Woche."}
+                  </p>
                 </div>
-                <button onClick={() => leadsQuery.refetch()} className="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm hover:bg-accent">
-                  <RefreshCcw className="size-4" /> Aktualisieren
+                <button
+                  onClick={() => setTab("embed")}
+                  className="shrink-0 inline-flex items-center gap-2 rounded-lg bg-primary text-primary-foreground px-4 py-2.5 text-sm font-medium hover:bg-secondary transition shadow-sm"
+                >
+                  <Sparkles className="size-4" /> Widget einbetten
                 </button>
               </div>
-              <div className="mt-6 grid grid-cols-2 md:grid-cols-4 gap-3">
-                <Stat label="Neue Leads" value={stats.total} icon={Sparkles} />
-                <Stat label="Qualifizierte Leads" value={stats.qualified} icon={MessageSquare} tone="warm" />
-                <Stat label="🔥 Heiße Leads" value={stats.hot} tone="hot" icon={Flame} />
-                <Stat label="Termine" value={stats.termine} icon={Calendar} tone="cold" />
+
+              {/* Stats */}
+              <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+                <StatCard label="Neue Leads" value={stats.total} delta={stats.newWeek} deltaLabel="diese Woche" icon={Users} tone="primary" />
+                <StatCard label="Heiße Leads" value={stats.hot} icon={Flame} tone="hot" hint="Sofort kontaktieren" />
+                <StatCard label="Termine" value={stats.termine} icon={Calendar} tone="gold" hint="Vereinbart" />
+                <StatCard label="Conversion Rate" value={`${stats.conversion}%`} icon={TrendingUp} tone="success" progress={stats.conversion} />
               </div>
-            </div>
 
-            <div className="flex-1 min-h-0 overflow-y-auto p-8">
-              {leads.length === 0 ? (
-                <div className="p-16 text-center rounded-2xl border border-dashed border-border bg-card">
-                  <Users className="size-10 mx-auto text-muted-foreground/40" />
-                  <p className="mt-4 text-sm text-muted-foreground">Noch keine Leads. Sobald jemand mit Ihrem EstateAI-Chat spricht, erscheint er hier.</p>
-                  <button onClick={() => setTab("embed")} className="mt-4 text-sm font-medium text-foreground inline-flex items-center gap-1.5">
-                    Widget einbetten <ArrowRight className="size-3.5" />
-                  </button>
+              {/* Leads */}
+              <section className="mt-8 rounded-2xl border border-border bg-card shadow-soft overflow-hidden">
+                <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-5 sm:px-6 py-4 border-b border-border">
+                  <div className="min-w-0">
+                    <h2 className="font-display text-lg">Letzte Leads</h2>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {filteredLeads.length} von {leads.length} {leads.length === 1 ? "Lead" : "Leads"}
+                    </p>
+                  </div>
+                  <Link to="/leads/$leadId" params={{ leadId: leads[0]?.id ?? "x" }} className={cn("text-xs font-medium text-muted-foreground hover:text-foreground inline-flex items-center gap-1", !leads.length && "pointer-events-none opacity-40")}>
+                    Alle anzeigen <ArrowUpRight className="size-3.5" />
+                  </Link>
                 </div>
-              ) : (
-                <LeadsTable leads={leads} />
-              )}
-            </div>
-          </>
-        )}
 
-        {tab === "embed" && company && <EmbedTab companyId={company.id} />}
-        {tab === "settings" && company && <SettingsTab company={company} onSaved={() => companyQuery.refetch()} />}
-      </main>
+                {filteredLeads.length === 0 ? (
+                  <EmptyState onAction={() => setTab("embed")} />
+                ) : (
+                  <LeadsTable leads={filteredLeads} />
+                )}
+              </section>
+            </div>
+          )}
+
+          {tab === "embed" && company && <EmbedTab companyId={company.id} />}
+          {tab === "settings" && company && <SettingsTab company={company} onSaved={() => companyQuery.refetch()} />}
+        </main>
+      </div>
+    </div>
+  );
+}
+
+function SidebarSection({ label }: { label: string }) {
+  return <div className="px-3 pt-2 pb-1.5 text-[10px] uppercase tracking-wider font-semibold text-sidebar-foreground/40">{label}</div>;
+}
+
+function NavBtn({
+  active, icon: Icon, onClick, children, badge,
+}: { active?: boolean; icon: typeof Users; onClick: () => void; children: React.ReactNode; badge?: number | string }) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition text-sm",
+        active
+          ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm"
+          : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
+      )}
+    >
+      <Icon className="size-4 shrink-0" />
+      <span className="flex-1 text-left truncate">{children}</span>
+      {badge !== undefined && (
+        <span className={cn(
+          "text-[10px] font-semibold px-1.5 py-0.5 rounded-md min-w-[20px] text-center",
+          active ? "bg-gold text-gold-foreground" : "bg-sidebar-accent text-sidebar-foreground/80",
+        )}>{badge}</span>
+      )}
+    </button>
+  );
+}
+
+function StatCard({
+  label, value, delta, deltaLabel, icon: Icon, tone, hint, progress,
+}: {
+  label: string; value: number | string; delta?: number; deltaLabel?: string;
+  icon: typeof Flame; tone: "primary" | "hot" | "gold" | "success"; hint?: string; progress?: number;
+}) {
+  const toneClass = {
+    primary: "bg-primary/10 text-primary",
+    hot: "bg-destructive/10 text-destructive",
+    gold: "bg-gold/15 text-gold-foreground",
+    success: "bg-success/15 text-success",
+  }[tone];
+  const progressClass = {
+    primary: "bg-primary", hot: "bg-destructive", gold: "bg-gold", success: "bg-success",
+  }[tone];
+  return (
+    <div className="group rounded-2xl border border-border bg-card p-5 shadow-soft hover:shadow-elegant transition">
+      <div className="flex items-start justify-between">
+        <div className="min-w-0">
+          <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{label}</div>
+          <div className="mt-2 font-display text-3xl sm:text-4xl tabular-nums">{value}</div>
+        </div>
+        <div className={cn("size-11 rounded-xl grid place-items-center shrink-0", toneClass)}>
+          <Icon className="size-5" />
+        </div>
+      </div>
+      <div className="mt-4 min-h-[20px]">
+        {progress !== undefined ? (
+          <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+            <div className={cn("h-full transition-all", progressClass)} style={{ width: `${Math.min(100, Math.max(0, progress))}%` }} />
+          </div>
+        ) : delta !== undefined ? (
+          <div className="flex items-center gap-1.5 text-xs">
+            <span className={cn("inline-flex items-center gap-0.5 font-semibold", delta > 0 ? "text-success" : "text-muted-foreground")}>
+              <ArrowUpRight className="size-3" />+{delta}
+            </span>
+            <span className="text-muted-foreground">{deltaLabel}</span>
+          </div>
+        ) : hint ? (
+          <div className="text-xs text-muted-foreground">{hint}</div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function EmptyState({ onAction }: { onAction: () => void }) {
+  return (
+    <div className="p-12 sm:p-16 text-center">
+      <div className="size-12 mx-auto rounded-2xl bg-muted grid place-items-center">
+        <Users className="size-6 text-muted-foreground" />
+      </div>
+      <p className="mt-4 text-sm text-muted-foreground max-w-sm mx-auto">
+        Noch keine Leads. Sobald jemand mit Ihrem EstateAI-Chat spricht, erscheint er hier.
+      </p>
+      <button onClick={onAction} className="mt-5 inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:text-secondary">
+        Widget einbetten <ArrowRight className="size-3.5" />
+      </button>
     </div>
   );
 }
 
 function LeadsTable({ leads }: { leads: Lead[] }) {
   return (
-    <div className="overflow-hidden rounded-2xl border border-border bg-card shadow-soft">
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
-            <tr>
-              <th className="text-left px-4 py-3 font-medium">Name</th>
-              <th className="text-left px-4 py-3 font-medium">Typ</th>
-              <th className="text-left px-4 py-3 font-medium">Immobilie</th>
-              <th className="text-left px-4 py-3 font-medium">Motivation</th>
-              <th className="text-left px-4 py-3 font-medium">Zeitraum</th>
-              <th className="text-left px-4 py-3 font-medium">Score</th>
-              <th className="text-left px-4 py-3 font-medium">Status</th>
-              <th className="px-4 py-3"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {leads.map((l) => (
-              <tr key={l.id} className="border-t border-border hover:bg-accent/30 transition">
-                <td className="px-4 py-3">
-                  <div className="font-medium">{l.name ?? "Anonymer Besucher"}</div>
-                  <div className="text-xs text-muted-foreground">{l.email ?? l.phone ?? "—"}</div>
-                </td>
-                <td className="px-4 py-3"><IntentChip intent={l.intent} /></td>
-                <td className="px-4 py-3 text-muted-foreground">{l.property_type ?? l.object_desc ?? "—"}</td>
-                <td className="px-4 py-3 text-muted-foreground truncate max-w-[180px]">{l.motivation ?? "—"}</td>
-                <td className="px-4 py-3 text-muted-foreground">{l.timeframe ?? l.move_in_date ?? "—"}</td>
-                <td className="px-4 py-3"><ScorePill score={l.score} num={l.score_numeric} /></td>
-                <td className="px-4 py-3"><StatusBadge status={l.status} /></td>
-                <td className="px-4 py-3 text-right">
-                  <Link
-                    to="/leads/$leadId"
-                    params={{ leadId: l.id }}
-                    className="inline-flex items-center gap-1.5 text-xs font-medium text-foreground hover:text-gold"
-                  >
-                    Details <ExternalLink className="size-3.5" />
-                  </Link>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="text-[11px] uppercase tracking-wider text-muted-foreground border-b border-border bg-muted/30">
+            <th className="text-left font-semibold px-6 py-3">Kunde</th>
+            <th className="text-left font-semibold px-4 py-3">Typ</th>
+            <th className="text-left font-semibold px-4 py-3">Immobilie</th>
+            <th className="text-left font-semibold px-4 py-3">Motivation</th>
+            <th className="text-left font-semibold px-4 py-3 w-[200px]">Lead Score</th>
+            <th className="text-left font-semibold px-4 py-3">Status</th>
+            <th className="text-left font-semibold px-4 py-3">Datum</th>
+            <th className="px-4 py-3"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {leads.map((l) => (
+            <LeadRow key={l.id} lead={l} />
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
 
-function Stat({ label, value, tone, icon: Icon }: { label: string; value: number; tone?: "hot" | "warm" | "cold"; icon: typeof Flame }) {
-  const colors = tone === "hot" ? "text-destructive bg-destructive/10" : tone === "warm" ? "text-warning bg-warning/15" : tone === "cold" ? "text-info bg-info/10" : "text-primary bg-accent";
+function LeadRow({ lead: l }: { lead: Lead }) {
+  const initials = (l.name ?? "??").split(" ").slice(0, 2).map((s) => s[0]?.toUpperCase() ?? "").join("") || "?";
   return (
-    <div className="rounded-xl border border-border bg-card p-4 flex items-center gap-4">
-      <div className={cn("size-10 rounded-lg grid place-items-center shrink-0", colors)}>
-        <Icon className="size-5" />
+    <tr className="border-b border-border last:border-0 hover:bg-muted/30 transition group">
+      <td className="px-6 py-4">
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="size-9 rounded-full bg-gradient-navy text-primary-foreground grid place-items-center text-xs font-semibold shrink-0">
+            {initials}
+          </div>
+          <div className="min-w-0">
+            <div className="font-medium truncate">{l.name ?? "Anonymer Besucher"}</div>
+            <div className="text-xs text-muted-foreground truncate">{l.email ?? l.phone ?? "—"}</div>
+          </div>
+        </div>
+      </td>
+      <td className="px-4 py-4"><IntentChip intent={l.intent} /></td>
+      <td className="px-4 py-4 text-muted-foreground">
+        <div className="truncate max-w-[200px]">{l.property_type ?? l.object_desc ?? "—"}</div>
+        {l.location && <div className="text-xs text-muted-foreground/70 truncate">{l.location}</div>}
+      </td>
+      <td className="px-4 py-4 text-muted-foreground">
+        <div className="truncate max-w-[220px]">{l.motivation ?? "—"}</div>
+      </td>
+      <td className="px-4 py-4">
+        <ScoreBar score={l.score} num={l.score_numeric} />
+      </td>
+      <td className="px-4 py-4"><StatusBadge status={l.status} score={l.score} /></td>
+      <td className="px-4 py-4 text-xs text-muted-foreground whitespace-nowrap">
+        {formatDate(l.created_at)}
+      </td>
+      <td className="px-4 py-4 text-right">
+        <Link
+          to="/leads/$leadId" params={{ leadId: l.id }}
+          className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition"
+        >
+          Öffnen <ExternalLink className="size-3" />
+        </Link>
+      </td>
+    </tr>
+  );
+}
+
+function formatDate(iso: string) {
+  const d = new Date(iso);
+  const days = Math.floor((Date.now() - d.getTime()) / 864e5);
+  if (days === 0) return "Heute";
+  if (days === 1) return "Gestern";
+  if (days < 7) return `vor ${days}d`;
+  return d.toLocaleDateString("de-DE", { day: "2-digit", month: "short" });
+}
+
+export function ScoreBar({ score, num }: { score: "hot" | "warm" | "cold"; num: number }) {
+  const cls = score === "hot" ? "bg-destructive" : score === "warm" ? "bg-warning" : "bg-info";
+  return (
+    <div className="flex items-center gap-2.5 min-w-[160px]">
+      <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+        <div className={cn("h-full rounded-full transition-all", cls)} style={{ width: `${Math.max(4, Math.min(100, num))}%` }} />
       </div>
-      <div>
-        <div className="text-xs text-muted-foreground">{label}</div>
-        <div className="mt-0.5 font-display text-2xl">{value}</div>
-      </div>
+      <span className="text-xs font-semibold tabular-nums w-9 text-right">{num}</span>
     </div>
   );
 }
 
+// Backwards-compat export still used in lead detail page
 export function ScorePill({ score, num }: { score: "hot" | "warm" | "cold"; num: number }) {
   const cfg = {
     hot: { cls: "bg-destructive/10 text-destructive", label: "HOT", Icon: Flame },
-    warm: { cls: "bg-warning/15 text-warning", label: "WARM", Icon: MessageSquare },
+    warm: { cls: "bg-warning/15 text-warning", label: "WARM", Icon: Sparkles },
     cold: { cls: "bg-info/10 text-info", label: "COLD", Icon: Snowflake },
   }[score];
   const Icon = cfg.Icon;
@@ -259,27 +447,42 @@ export function ScorePill({ score, num }: { score: "hot" | "warm" | "cold"; num:
   );
 }
 
-export function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, string> = {
-    neu: "bg-muted text-muted-foreground",
-    qualifiziert: "bg-secondary/10 text-secondary",
-    termin: "bg-gold/15 text-gold-foreground",
-  };
-  const cls = map[status] ?? "bg-muted text-muted-foreground";
-  return <span className={cn("rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wide font-medium", cls)}>{status}</span>;
+export function StatusBadge({ status, score }: { status: string; score?: "hot" | "warm" | "cold" }) {
+  // Combined status that prioritizes lead temperature
+  const temp = score ?? "cold";
+  const tempCfg = {
+    hot: { emoji: "🔥", label: "Hot", cls: "bg-destructive/10 text-destructive border-destructive/20" },
+    warm: { emoji: "🟡", label: "Warm", cls: "bg-warning/15 text-warning border-warning/20" },
+    cold: { emoji: "⚪", label: "Cold", cls: "bg-info/10 text-info border-info/20" },
+  }[temp];
+  const isMeeting = status === "termin";
+  const isQualified = status === "qualifiziert";
+  return (
+    <div className="flex flex-col gap-1 items-start">
+      <span className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold", tempCfg.cls)}>
+        <span>{tempCfg.emoji}</span> {tempCfg.label}
+      </span>
+      {(isMeeting || isQualified) && (
+        <span className="text-[10px] uppercase tracking-wide font-medium text-muted-foreground">
+          {isMeeting ? "Termin" : "Qualifiziert"}
+        </span>
+      )}
+    </div>
+  );
 }
 
 export function IntentChip({ intent }: { intent: Lead["intent"] }) {
-  if (intent === "unbekannt") return <span className="text-muted-foreground text-xs">Noch unklar</span>;
-  const map: Record<string, string> = {
-    kauf: "bg-secondary/10 text-secondary",
-    verkauf: "bg-gold/15 text-gold-foreground",
-    bewertung: "bg-info/10 text-info",
-    miete: "bg-accent text-primary",
+  if (intent === "unbekannt") return <span className="text-xs text-muted-foreground">—</span>;
+  const map: Record<string, { cls: string; label: string }> = {
+    kauf: { cls: "bg-secondary/10 text-secondary border-secondary/20", label: "Käufer" },
+    verkauf: { cls: "bg-gold/15 text-gold-foreground border-gold/30", label: "Verkäufer" },
+    bewertung: { cls: "bg-info/10 text-info border-info/20", label: "Bewertung" },
+    miete: { cls: "bg-accent text-primary border-border", label: "Mieter" },
   };
+  const c = map[intent];
   return (
-    <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide", map[intent])}>
-      {intent === "kauf" ? "Käufer" : intent === "verkauf" ? "Verkäufer" : intent === "bewertung" ? "Bewertung" : "Mieter"}
+    <span className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold", c.cls)}>
+      {c.label}
     </span>
   );
 }
@@ -295,12 +498,12 @@ function EmbedTab({ companyId }: { companyId: string }) {
     setTimeout(() => setCopied(false), 1800);
   }
   return (
-    <div className="p-8 max-w-3xl">
-      <h1 className="font-display text-3xl">Widget einbetten</h1>
+    <div className="p-4 sm:p-8 max-w-3xl mx-auto">
+      <h1 className="font-display text-2xl sm:text-3xl">Widget einbetten</h1>
       <p className="mt-2 text-sm text-muted-foreground">Fügen Sie diesen Code-Schnipsel vor <code>{"</body>"}</code> in Ihre Website ein. Das EstateAI-Widget erscheint automatisch unten rechts.</p>
-      <div className="mt-6 rounded-2xl bg-primary text-primary-foreground p-5 font-mono text-sm relative overflow-x-auto">
-        <pre className="whitespace-pre-wrap break-all">{snippet}</pre>
-        <button onClick={copy} className="absolute top-3 right-3 inline-flex items-center gap-1.5 rounded-lg bg-gold text-gold-foreground px-3 py-1.5 text-xs font-medium">
+      <div className="mt-6 rounded-2xl bg-primary text-primary-foreground p-5 font-mono text-xs sm:text-sm relative overflow-x-auto shadow-elegant">
+        <pre className="whitespace-pre-wrap break-all pr-24">{snippet}</pre>
+        <button onClick={copy} className="absolute top-3 right-3 inline-flex items-center gap-1.5 rounded-lg bg-gold text-gold-foreground px-3 py-1.5 text-xs font-medium hover:opacity-90">
           {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />} {copied ? "Kopiert" : "Kopieren"}
         </button>
       </div>
@@ -308,10 +511,10 @@ function EmbedTab({ companyId }: { companyId: string }) {
       <div className="mt-8 grid sm:grid-cols-3 gap-4">
         {[
           { i: 1, t: "Code kopieren", d: "Den obigen Schnipsel in die Zwischenablage." },
-          { i: 2, t: "In Ihre Website einfügen", d: "Vor dem schließenden </body>-Tag." },
+          { i: 2, t: "In Website einfügen", d: "Vor dem schließenden </body>-Tag." },
           { i: 3, t: "Fertig", d: "Besucher chatten ab sofort mit EstateAI." },
         ].map((s) => (
-          <div key={s.i} className="rounded-xl border border-border bg-card p-4">
+          <div key={s.i} className="rounded-2xl border border-border bg-card p-5 shadow-soft">
             <div className="size-8 rounded-lg bg-gradient-navy text-gold grid place-items-center font-display">{s.i}</div>
             <div className="mt-3 font-medium">{s.t}</div>
             <div className="text-xs text-muted-foreground mt-1">{s.d}</div>
@@ -319,10 +522,10 @@ function EmbedTab({ companyId }: { companyId: string }) {
         ))}
       </div>
 
-      <div className="mt-8 rounded-xl border border-border bg-card p-5">
+      <div className="mt-8 rounded-2xl border border-border bg-card p-5 shadow-soft">
         <h3 className="font-display text-lg flex items-center gap-2"><Building2 className="size-4 text-gold" /> Vorschau</h3>
         <p className="text-sm text-muted-foreground mt-1">So sehen Ihre Besucher das Widget.</p>
-        <a href="/" target="_blank" className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium hover:text-gold">
+        <a href="/" target="_blank" rel="noreferrer" className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium hover:text-gold">
           Live-Demo öffnen <ArrowRight className="size-3.5" />
         </a>
       </div>
@@ -350,10 +553,10 @@ function SettingsTab({ company, onSaved }: { company: Company; onSaved: () => vo
   }
 
   return (
-    <div className="p-8 max-w-2xl">
-      <h1 className="font-display text-3xl">Einstellungen</h1>
+    <div className="p-4 sm:p-8 max-w-2xl mx-auto">
+      <h1 className="font-display text-2xl sm:text-3xl">Einstellungen</h1>
       <p className="mt-2 text-sm text-muted-foreground">Personalisieren Sie Ihren EstateAI-Assistenten.</p>
-      <form onSubmit={save} className="mt-8 space-y-5">
+      <form onSubmit={save} className="mt-8 space-y-5 rounded-2xl border border-border bg-card p-6 shadow-soft">
         <div>
           <label className="text-sm font-medium">Unternehmensname</label>
           <input value={name} onChange={(e) => setName(e.target.value)} className="mt-1.5 w-full rounded-xl border border-input bg-background px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-ring" />
