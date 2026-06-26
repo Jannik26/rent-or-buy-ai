@@ -19,7 +19,9 @@ export const runDiagnostics = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }): Promise<DiagnosticsResult> => {
     // Admin role check — diagnostics expose cross-company operational data.
-    const { data: isAdmin, error: roleErr } = await context.supabase.rpc("has_role", {
+    // Use admin client because EXECUTE on has_role is restricted to service_role.
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: isAdmin, error: roleErr } = await supabaseAdmin.rpc("has_role", {
       _user_id: context.userId,
       _role: "admin",
     });
