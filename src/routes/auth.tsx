@@ -37,7 +37,10 @@ function AuthPage() {
           password,
           options: {
             emailRedirectTo: window.location.origin,
-            data: { company_name: companyName || "Mein Maklerbüro" },
+            data: {
+              company_name: companyName || "Mein Maklerbüro",
+              full_name: fullName || null,
+            },
           },
         });
         if (error) throw error;
