@@ -18,6 +18,7 @@ function AuthPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [companyName, setCompanyName] = useState("");
+  const [fullName, setFullName] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -36,7 +37,10 @@ function AuthPage() {
           password,
           options: {
             emailRedirectTo: window.location.origin,
-            data: { company_name: companyName || "Mein Maklerbüro" },
+            data: {
+              company_name: companyName || "Mein Maklerbüro",
+              full_name: fullName || null,
+            },
           },
         });
         if (error) throw error;
@@ -116,12 +120,20 @@ function AuthPage() {
 
           <form onSubmit={submit} className="space-y-3">
             {mode === "signup" && (
-              <input
-                value={companyName}
-                onChange={(e) => setCompanyName(e.target.value)}
-                placeholder="Name Ihres Unternehmens"
-                className="w-full rounded-xl border border-input bg-background px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-ring"
-              />
+              <>
+                <input
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="Ihr vollständiger Name"
+                  className="w-full rounded-xl border border-input bg-background px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+                />
+                <input
+                  value={companyName}
+                  onChange={(e) => setCompanyName(e.target.value)}
+                  placeholder="Name Ihres Unternehmens"
+                  className="w-full rounded-xl border border-input bg-background px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+                />
+              </>
             )}
             <input
               type="email"
