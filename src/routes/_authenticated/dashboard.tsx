@@ -1,14 +1,14 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import {
-  ArrowRight, ArrowUpRight, Bell, Building2, Calendar, Check, ChevronRight, Code2, Copy, ExternalLink,
-  Flame, Home, LayoutDashboard, LogOut, Search, Settings, Snowflake, Sparkles, TrendingUp, Users,
+  ArrowRight, ArrowUpRight, Building2, Calendar, Check, Code2, Copy, ExternalLink,
+  Flame, Search, Snowflake, Sparkles, TrendingUp, Users,
 } from "lucide-react";
-import logo from "@/assets/estateai-logo.png";
 import { cn } from "@/lib/utils";
+
 
 export type Lead = {
   id: string;
@@ -47,8 +47,6 @@ export const Route = createFileRoute("/_authenticated/dashboard")({
 });
 
 function Dashboard() {
-  const navigate = useNavigate();
-  const qc = useQueryClient();
   const [tab, setTab] = useState<"leads" | "embed" | "settings">("leads");
   const [search, setSearch] = useState("");
 
@@ -115,142 +113,74 @@ function Dashboard() {
     );
   }, [leads, search]);
 
-  async function signOut() {
-    await qc.cancelQueries();
-    qc.clear();
-    await supabase.auth.signOut();
-    navigate({ to: "/auth", replace: true });
-  }
-
-  const initials = (profile?.full_name ?? profile?.email ?? "EA")
-    .split(/[\s@]/).filter(Boolean).slice(0, 2).map((s) => s[0]?.toUpperCase()).join("");
-
   return (
-    <div className="min-h-screen flex bg-muted/30">
-      {/* Sidebar */}
-      <aside className="hidden lg:flex w-64 shrink-0 bg-sidebar text-sidebar-foreground flex-col border-r border-sidebar-border">
-        <Link to="/" className="flex items-center gap-2.5 px-6 h-16 border-b border-sidebar-border">
-          <img src={logo} alt="" className="size-8" width={32} height={32} />
-          <span className="font-display text-lg">EstateAI</span>
-        </Link>
-        <nav className="flex-1 px-3 py-6 space-y-0.5 text-sm">
-          <SidebarSection label="Workspace" />
-          <NavBtn active={tab === "leads"} icon={LayoutDashboard} onClick={() => setTab("leads")}>Dashboard</NavBtn>
-          <NavBtn active={tab === "leads"} icon={Users} onClick={() => setTab("leads")} badge={stats.total}>Leads</NavBtn>
-          <NavBtn icon={Calendar} onClick={() => setTab("leads")} badge={stats.termine || undefined}>Termine</NavBtn>
-          <NavBtn icon={Home} onClick={() => setTab("leads")}>Immobilien</NavBtn>
-
-          <div className="h-px bg-sidebar-border my-4" />
-          <SidebarSection label="Setup" />
-          <NavBtn active={tab === "embed"} icon={Code2} onClick={() => setTab("embed")}>Widget einbetten</NavBtn>
-          <NavBtn active={tab === "settings"} icon={Settings} onClick={() => setTab("settings")}>Einstellungen</NavBtn>
-        </nav>
-        <div className="px-3 pb-4 pt-2 border-t border-sidebar-border">
-          <div className="flex items-center gap-3 px-3 py-2.5 rounded-lg">
-            <div className="size-9 rounded-full bg-gold text-gold-foreground grid place-items-center text-xs font-semibold shrink-0">
-              {initials || "EA"}
+    <>
+      {tab === "leads" && (
+        <div className="p-4 sm:p-8 max-w-[1600px] mx-auto w-full">
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-4 sm:flex sm:justify-between">
+            <div className="min-w-0">
+              <h1 className="font-display text-2xl sm:text-3xl truncate">
+                Willkommen zurück{profile?.full_name ? `, ${profile.full_name.split(" ")[0]}` : ""}
+              </h1>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {stats.newWeek > 0 ? `${stats.newWeek} neue Leads in den letzten 7 Tagen.` : "Noch keine neuen Leads diese Woche."}
+              </p>
             </div>
-            <div className="min-w-0 flex-1">
-              <div className="text-sm font-medium truncate">{profile?.full_name ?? "Makler"}</div>
-              <div className="text-[11px] text-sidebar-foreground/60 truncate">{profile?.company ?? company?.name ?? "—"}</div>
+            <div className="flex items-center gap-2">
+              <div className="hidden sm:flex items-center gap-2 bg-card border border-border rounded-lg px-3 py-2 w-64 shadow-soft">
+                <Search className="size-4 text-muted-foreground" />
+                <input
+                  value={search} onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Leads durchsuchen…"
+                  className="bg-transparent text-sm outline-none flex-1 placeholder:text-muted-foreground"
+                />
+              </div>
+              <button
+                onClick={() => setTab("embed")}
+                className="shrink-0 inline-flex items-center gap-2 rounded-lg bg-primary text-primary-foreground px-4 py-2.5 text-sm font-medium hover:bg-secondary transition shadow-sm"
+              >
+                <Sparkles className="size-4" /> Widget einbetten
+              </button>
             </div>
-            <button onClick={signOut} title="Abmelden" className="size-8 grid place-items-center rounded-md hover:bg-sidebar-accent/60 text-sidebar-foreground/70">
-              <LogOut className="size-4" />
-            </button>
           </div>
+
+          {/* Stats */}
+          <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <StatCard label="Neue Leads" value={stats.total} delta={stats.newWeek} deltaLabel="diese Woche" icon={Users} tone="primary" />
+            <StatCard label="Heiße Leads" value={stats.hot} icon={Flame} tone="hot" hint="Sofort kontaktieren" />
+            <StatCard label="Termine" value={stats.termine} icon={Calendar} tone="gold" hint="Vereinbart" />
+            <StatCard label="Conversion Rate" value={`${stats.conversion}%`} icon={TrendingUp} tone="success" progress={stats.conversion} />
+          </div>
+
+          {/* Leads */}
+          <section className="mt-8 rounded-2xl border border-border bg-card shadow-soft overflow-hidden">
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-5 sm:px-6 py-4 border-b border-border">
+              <div className="min-w-0">
+                <h2 className="font-display text-lg">Letzte Leads</h2>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {filteredLeads.length} von {leads.length} {leads.length === 1 ? "Lead" : "Leads"}
+                </p>
+              </div>
+              <Link to="/leads" className="text-xs font-medium text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
+                Alle anzeigen <ArrowUpRight className="size-3.5" />
+              </Link>
+            </div>
+
+            {filteredLeads.length === 0 ? (
+              <EmptyState onAction={() => setTab("embed")} />
+            ) : (
+              <LeadsTable leads={filteredLeads} />
+            )}
+          </section>
         </div>
-      </aside>
+      )}
 
-      <div className="flex-1 min-w-0 flex flex-col">
-        {/* Topbar */}
-        <header className="h-16 bg-card border-b border-border flex items-center gap-4 px-4 sm:px-8 sticky top-0 z-20">
-          <Link to="/" className="lg:hidden flex items-center gap-2">
-            <img src={logo} alt="" className="size-7" width={28} height={28} />
-            <span className="font-display text-base">EstateAI</span>
-          </Link>
-          <div className="hidden md:flex items-center text-sm text-muted-foreground gap-1.5">
-            <span>{company?.name ?? "Workspace"}</span>
-            <ChevronRight className="size-3.5" />
-            <span className="text-foreground font-medium">
-              {tab === "leads" ? "Dashboard" : tab === "embed" ? "Widget" : "Einstellungen"}
-            </span>
-          </div>
-          <div className="flex-1" />
-          <div className="hidden sm:flex items-center gap-2 bg-muted/60 rounded-lg px-3 py-2 w-72">
-            <Search className="size-4 text-muted-foreground" />
-            <input
-              value={search} onChange={(e) => setSearch(e.target.value)}
-              placeholder="Leads durchsuchen…"
-              className="bg-transparent text-sm outline-none flex-1 placeholder:text-muted-foreground"
-            />
-          </div>
-          <button className="size-9 grid place-items-center rounded-lg hover:bg-muted relative">
-            <Bell className="size-4" />
-            {stats.hot > 0 && <span className="absolute top-2 right-2 size-1.5 rounded-full bg-destructive" />}
-          </button>
-          <div className="size-9 rounded-full bg-primary text-primary-foreground grid place-items-center text-xs font-semibold lg:hidden">
-            {initials || "EA"}
-          </div>
-        </header>
-
-        <main className="flex-1 min-w-0 overflow-y-auto">
-          {tab === "leads" && (
-            <div className="p-4 sm:p-8 max-w-[1600px] mx-auto w-full">
-              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-4 sm:flex sm:justify-between">
-                <div className="min-w-0">
-                  <h1 className="font-display text-2xl sm:text-3xl truncate">
-                    Willkommen zurück{profile?.full_name ? `, ${profile.full_name.split(" ")[0]}` : ""}
-                  </h1>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {stats.newWeek > 0 ? `${stats.newWeek} neue Leads in den letzten 7 Tagen.` : "Noch keine neuen Leads diese Woche."}
-                  </p>
-                </div>
-                <button
-                  onClick={() => setTab("embed")}
-                  className="shrink-0 inline-flex items-center gap-2 rounded-lg bg-primary text-primary-foreground px-4 py-2.5 text-sm font-medium hover:bg-secondary transition shadow-sm"
-                >
-                  <Sparkles className="size-4" /> Widget einbetten
-                </button>
-              </div>
-
-              {/* Stats */}
-              <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                <StatCard label="Neue Leads" value={stats.total} delta={stats.newWeek} deltaLabel="diese Woche" icon={Users} tone="primary" />
-                <StatCard label="Heiße Leads" value={stats.hot} icon={Flame} tone="hot" hint="Sofort kontaktieren" />
-                <StatCard label="Termine" value={stats.termine} icon={Calendar} tone="gold" hint="Vereinbart" />
-                <StatCard label="Conversion Rate" value={`${stats.conversion}%`} icon={TrendingUp} tone="success" progress={stats.conversion} />
-              </div>
-
-              {/* Leads */}
-              <section className="mt-8 rounded-2xl border border-border bg-card shadow-soft overflow-hidden">
-                <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-5 sm:px-6 py-4 border-b border-border">
-                  <div className="min-w-0">
-                    <h2 className="font-display text-lg">Letzte Leads</h2>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      {filteredLeads.length} von {leads.length} {leads.length === 1 ? "Lead" : "Leads"}
-                    </p>
-                  </div>
-                  <Link to="/leads/$leadId" params={{ leadId: leads[0]?.id ?? "x" }} className={cn("text-xs font-medium text-muted-foreground hover:text-foreground inline-flex items-center gap-1", !leads.length && "pointer-events-none opacity-40")}>
-                    Alle anzeigen <ArrowUpRight className="size-3.5" />
-                  </Link>
-                </div>
-
-                {filteredLeads.length === 0 ? (
-                  <EmptyState onAction={() => setTab("embed")} />
-                ) : (
-                  <LeadsTable leads={filteredLeads} />
-                )}
-              </section>
-            </div>
-          )}
-
-          {tab === "embed" && company && <EmbedTab companyId={company.id} />}
-          {tab === "settings" && company && <SettingsTab company={company} onSaved={() => companyQuery.refetch()} />}
-        </main>
-      </div>
-    </div>
+      {tab === "embed" && company && <EmbedTab companyId={company.id} />}
+      {tab === "settings" && company && <SettingsTab company={company} onSaved={() => companyQuery.refetch()} />}
+    </>
   );
 }
+
 
 function SidebarSection({ label }: { label: string }) {
   return <div className="px-3 pt-2 pb-1.5 text-[10px] uppercase tracking-wider font-semibold text-sidebar-foreground/40">{label}</div>;
