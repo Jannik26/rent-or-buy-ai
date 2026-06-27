@@ -152,6 +152,14 @@ function AuthPage() {
               placeholder="Passwort"
               className="w-full rounded-xl border border-input bg-background px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-ring"
             />
+            {mode === "signin" && (
+              <div className="text-right">
+                <Link to="/forgot-password" className="text-xs text-muted-foreground hover:text-foreground">
+                  Passwort vergessen?
+                </Link>
+              </div>
+            )}
+
             <button
               type="submit"
               disabled={busy}
