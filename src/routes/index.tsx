@@ -49,19 +49,20 @@ function Landing() {
               EstateAI beantwortet Interessenten automatisch, erkennt Kauf- und Verkaufsabsichten und unterstützt Immobilienunternehmen im Vertrieb.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
-              <a
-                href="#demo"
+              <Link
+                to="/demo"
                 className="inline-flex items-center gap-2 rounded-full bg-primary text-primary-foreground px-6 py-3.5 font-medium shadow-elegant hover:bg-secondary transition"
               >
                 Demo starten <ArrowRight className="size-4" />
-              </a>
-              <a
-                href="#kontakt"
+              </Link>
+              <Link
+                to="/auth"
                 className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-6 py-3.5 font-medium hover:bg-accent transition"
               >
-                <MessageCircle className="size-4" /> Kontakt aufnehmen
-              </a>
+                <MessageCircle className="size-4" /> Makler Login
+              </Link>
             </div>
+
             <div className="mt-10 flex items-center gap-6 text-xs text-muted-foreground">
               <span className="flex items-center gap-1.5"><CheckCircle2 className="size-3.5 text-gold" /> DSGVO-konform</span>
               <span className="flex items-center gap-1.5"><CheckCircle2 className="size-3.5 text-gold" /> Käufer · Verkäufer · Bewertung</span>
