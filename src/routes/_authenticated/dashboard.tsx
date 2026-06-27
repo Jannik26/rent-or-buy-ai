@@ -182,34 +182,8 @@ function Dashboard() {
 }
 
 
-function SidebarSection({ label }: { label: string }) {
-  return <div className="px-3 pt-2 pb-1.5 text-[10px] uppercase tracking-wider font-semibold text-sidebar-foreground/40">{label}</div>;
-}
 
-function NavBtn({
-  active, icon: Icon, onClick, children, badge,
-}: { active?: boolean; icon: typeof Users; onClick: () => void; children: React.ReactNode; badge?: number | string }) {
-  return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition text-sm",
-        active
-          ? "bg-sidebar-accent text-sidebar-accent-foreground shadow-sm"
-          : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
-      )}
-    >
-      <Icon className="size-4 shrink-0" />
-      <span className="flex-1 text-left truncate">{children}</span>
-      {badge !== undefined && (
-        <span className={cn(
-          "text-[10px] font-semibold px-1.5 py-0.5 rounded-md min-w-[20px] text-center",
-          active ? "bg-gold text-gold-foreground" : "bg-sidebar-accent text-sidebar-foreground/80",
-        )}>{badge}</span>
-      )}
-    </button>
-  );
-}
+
 
 function StatCard({
   label, value, delta, deltaLabel, icon: Icon, tone, hint, progress,
