@@ -3,9 +3,11 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useState } from "react";
 import { toast } from "sonner";
-import { ArrowLeft, Calendar, CheckCircle2, Mail, Phone, Sparkles, Target } from "lucide-react";
+import { ArrowLeft, Calendar, CheckCircle2, Mail, Phone } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { IntentChip, ScorePill, StatusBadge, type Lead } from "../dashboard";
+import { IntentChip, StatusBadge, type Lead } from "../dashboard";
+import { LeadSummaryCard } from "@/components/lead-summary-card";
+import type { LeadIntent, LeadScore } from "@/lib/lead-summary-schema";
 
 export const Route = createFileRoute("/_authenticated/leads/$leadId")({
   head: () => ({ meta: [{ title: "Lead-Details – EstateAI" }] }),
