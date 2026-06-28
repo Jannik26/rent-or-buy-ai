@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
+import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as DemoRouteImport } from './routes/demo'
 import { Route as AuthRouteImport } from './routes/auth'
@@ -29,6 +30,11 @@ import { Route as ApiPublicWidgetChatRouteImport } from './routes/api/public/wid
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
   path: '/sitemap.xml',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ResetPasswordRoute = ResetPasswordRouteImport.update({
+  id: '/reset-password',
+  path: '/reset-password',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
@@ -114,6 +120,7 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/demo': typeof DemoRoute
   '/forgot-password': typeof ForgotPasswordRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/analytics': typeof AuthenticatedAnalyticsRoute
   '/appointments': typeof AuthenticatedAppointmentsRoute
@@ -131,6 +138,7 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/demo': typeof DemoRoute
   '/forgot-password': typeof ForgotPasswordRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/analytics': typeof AuthenticatedAnalyticsRoute
   '/appointments': typeof AuthenticatedAppointmentsRoute
@@ -150,6 +158,7 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/demo': typeof DemoRoute
   '/forgot-password': typeof ForgotPasswordRoute
+  '/reset-password': typeof ResetPasswordRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/_authenticated/analytics': typeof AuthenticatedAnalyticsRoute
   '/_authenticated/appointments': typeof AuthenticatedAppointmentsRoute
@@ -169,6 +178,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/demo'
     | '/forgot-password'
+    | '/reset-password'
     | '/sitemap.xml'
     | '/analytics'
     | '/appointments'
@@ -186,6 +196,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/demo'
     | '/forgot-password'
+    | '/reset-password'
     | '/sitemap.xml'
     | '/analytics'
     | '/appointments'
@@ -204,6 +215,7 @@ export interface FileRouteTypes {
     | '/auth'
     | '/demo'
     | '/forgot-password'
+    | '/reset-password'
     | '/sitemap.xml'
     | '/_authenticated/analytics'
     | '/_authenticated/appointments'
@@ -223,6 +235,7 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute
   DemoRoute: typeof DemoRoute
   ForgotPasswordRoute: typeof ForgotPasswordRoute
+  ResetPasswordRoute: typeof ResetPasswordRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   WidgetCompanyIdRoute: typeof WidgetCompanyIdRoute
   ApiPublicWidgetChatRoute: typeof ApiPublicWidgetChatRoute
@@ -235,6 +248,13 @@ declare module '@tanstack/react-router' {
       path: '/sitemap.xml'
       fullPath: '/sitemap.xml'
       preLoaderRoute: typeof SitemapDotxmlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reset-password': {
+      id: '/reset-password'
+      path: '/reset-password'
+      fullPath: '/reset-password'
+      preLoaderRoute: typeof ResetPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/forgot-password': {
@@ -376,6 +396,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRoute,
   DemoRoute: DemoRoute,
   ForgotPasswordRoute: ForgotPasswordRoute,
+  ResetPasswordRoute: ResetPasswordRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   WidgetCompanyIdRoute: WidgetCompanyIdRoute,
   ApiPublicWidgetChatRoute: ApiPublicWidgetChatRoute,
