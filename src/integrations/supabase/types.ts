@@ -47,6 +47,7 @@ export type Database = {
       leads: {
         Row: {
           ai_summary: string | null
+          asking_price: string | null
           budget: string | null
           company_id: string
           created_at: string
@@ -70,12 +71,14 @@ export type Database = {
           score: Database["public"]["Enums"]["lead_score"]
           score_numeric: number
           status: string
+          summary_generated_at: string | null
           timeframe: string | null
           updated_at: string
           usage_type: string | null
         }
         Insert: {
           ai_summary?: string | null
+          asking_price?: string | null
           budget?: string | null
           company_id: string
           created_at?: string
@@ -99,12 +102,14 @@ export type Database = {
           score?: Database["public"]["Enums"]["lead_score"]
           score_numeric?: number
           status?: string
+          summary_generated_at?: string | null
           timeframe?: string | null
           updated_at?: string
           usage_type?: string | null
         }
         Update: {
           ai_summary?: string | null
+          asking_price?: string | null
           budget?: string | null
           company_id?: string
           created_at?: string
@@ -128,6 +133,7 @@ export type Database = {
           score?: Database["public"]["Enums"]["lead_score"]
           score_numeric?: number
           status?: string
+          summary_generated_at?: string | null
           timeframe?: string | null
           updated_at?: string
           usage_type?: string | null
@@ -256,7 +262,13 @@ export type Database = {
     }
     Enums: {
       app_role: "admin" | "moderator" | "user"
-      lead_intent: "kauf" | "miete" | "unbekannt" | "verkauf" | "bewertung"
+      lead_intent:
+        | "kauf"
+        | "miete"
+        | "unbekannt"
+        | "verkauf"
+        | "bewertung"
+        | "sonstiges"
       lead_score: "hot" | "warm" | "cold"
     }
     CompositeTypes: {
@@ -386,7 +398,14 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["admin", "moderator", "user"],
-      lead_intent: ["kauf", "miete", "unbekannt", "verkauf", "bewertung"],
+      lead_intent: [
+        "kauf",
+        "miete",
+        "unbekannt",
+        "verkauf",
+        "bewertung",
+        "sonstiges",
+      ],
       lead_score: ["hot", "warm", "cold"],
     },
   },
