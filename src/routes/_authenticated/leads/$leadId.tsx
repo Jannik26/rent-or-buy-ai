@@ -149,24 +149,6 @@ function LeadDetailPage() {
 
         {/* Sidebar */}
         <aside className="space-y-4">
-          <div className="rounded-2xl border border-border bg-card p-6 text-center">
-            <div className="text-xs uppercase tracking-wide text-muted-foreground">Lead-Score</div>
-            <div className="mt-2 font-display text-5xl">
-              {lead.score_numeric}
-              <span className="text-2xl text-muted-foreground">/100</span>
-            </div>
-            <div className="mt-3 flex justify-center">
-              <ScorePill score={lead.score} num={lead.score_numeric} />
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-border bg-gradient-navy text-primary-foreground p-6">
-            <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-gold">
-              <Target className="size-3.5" /> Empfehlung
-            </div>
-            <p className="mt-2 text-sm leading-relaxed">{recommendation}</p>
-          </div>
-
           <div className="rounded-2xl border border-border bg-card p-6 text-sm">
             <div className="text-xs uppercase tracking-wide text-muted-foreground mb-3">Checkliste</div>
             <ul className="space-y-2">
