@@ -324,6 +324,7 @@ async function persistLeadFromTranscript(args: {
     messages: transcript as unknown as never,
   };
 
+  let finalLeadId: string | null = null;
   if (args.leadId) {
     const { data: existing } = await supabaseAdmin
       .from("leads")
@@ -332,11 +333,33 @@ async function persistLeadFromTranscript(args: {
       .maybeSingle();
     if (existing && existing.company_id !== args.companyId) {
       console.warn("[widget] leadId belongs to different company — inserting new lead instead");
-      await supabaseAdmin.from("leads").insert(payload);
-      return;
+      const ins = await supabaseAdmin.from("leads").insert(payload).select("id").maybeSingle();
+      finalLeadId = ins.data?.id ?? null;
+    } else {
+      await supabaseAdmin.from("leads").upsert({ id: args.leadId, ...payload });
+      finalLeadId = args.leadId;
     }
-    await supabaseAdmin.from("leads").upsert({ id: args.leadId, ...payload });
   } else {
-    await supabaseAdmin.from("leads").insert(payload);
+    const ins = await supabaseAdmin.from("leads").insert(payload).select("id").maybeSingle();
+    finalLeadId = ins.data?.id ?? null;
+  }
+
+  // ---- Auto-generate structured Lead-Summary once conversation is meaningful ----
+  const userMsgCount = args.messages.filter((m) => m.role === "user").length;
+  const hasContact = Boolean(data.name || data.email || data.phone);
+  if (finalLeadId && userMsgCount >= 3 && hasContact) {
+    try {
+      const key = process.env.LOVABLE_API_KEY;
+      if (key) {
+        const { generateLeadSummaryFromTranscript, summaryToLeadUpdate } = await import(
+          "@/lib/lead-summary.server"
+        );
+        const summary = await generateLeadSummaryFromTranscript(transcript, key);
+        await supabaseAdmin.from("leads").update(summaryToLeadUpdate(summary)).eq("id", finalLeadId);
+        console.log("[widget] structured lead summary generated", { leadId: finalLeadId });
+      }
+    } catch (err) {
+      console.error("[widget] auto-summary error", err);
+    }
   }
 }
