@@ -384,8 +384,9 @@ export function IntentChip({ intent }: { intent: Lead["intent"] }) {
     verkauf: { cls: "bg-gold/15 text-gold-foreground border-gold/30", label: "Verkäufer" },
     bewertung: { cls: "bg-info/10 text-info border-info/20", label: "Bewertung" },
     miete: { cls: "bg-accent text-primary border-border", label: "Mieter" },
+    sonstiges: { cls: "bg-muted text-muted-foreground border-border", label: "Sonstiges" },
   };
-  const c = map[intent];
+  const c = map[intent] ?? { cls: "bg-muted text-muted-foreground border-border", label: intent };
   return (
     <span className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold", c.cls)}>
       {c.label}
