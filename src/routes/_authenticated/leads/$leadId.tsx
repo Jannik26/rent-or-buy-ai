@@ -3,9 +3,11 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useState } from "react";
 import { toast } from "sonner";
-import { ArrowLeft, Calendar, CheckCircle2, Mail, Phone, Sparkles, Target } from "lucide-react";
+import { ArrowLeft, Calendar, CheckCircle2, Mail, Phone } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { IntentChip, ScorePill, StatusBadge, type Lead } from "../dashboard";
+import { IntentChip, StatusBadge, type Lead } from "../dashboard";
+import { LeadSummaryCard } from "@/components/lead-summary-card";
+import type { LeadIntent, LeadScore } from "@/lib/lead-summary-schema";
 
 export const Route = createFileRoute("/_authenticated/leads/$leadId")({
   head: () => ({ meta: [{ title: "Lead-Details – EstateAI" }] }),
@@ -46,7 +48,7 @@ function LeadDetailPage() {
     else { toast.success("Status aktualisiert"); q.refetch(); }
   }
 
-  const recommendation = lead.next_action ?? defaultRecommendation(lead);
+  
 
   return (
     <div className="min-h-screen bg-background">
@@ -85,14 +87,27 @@ function LeadDetailPage() {
             {lead.phone && <ContactRow icon={Phone} label="Telefon" value={lead.phone} href={`tel:${lead.phone}`} />}
           </div>
 
-          {/* AI Summary */}
-          <div className="mt-6 rounded-2xl border border-border bg-gradient-to-br from-card to-accent/30 p-6">
-            <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
-              <Sparkles className="size-3.5 text-gold" /> KI-Zusammenfassung
-            </div>
-            <p className="mt-2 text-sm leading-relaxed text-foreground">
-              {lead.ai_summary ?? lead.qualification_summary ?? "Noch keine Zusammenfassung verfügbar – das Gespräch läuft."}
-            </p>
+          {/* AI Lead Summary Card */}
+          <div className="mt-6">
+            <LeadSummaryCard
+              lead={{
+                id: lead.id,
+                intent: lead.intent as LeadIntent,
+                score: lead.score as LeadScore,
+                score_numeric: lead.score_numeric,
+                property_type: lead.property_type,
+                location: lead.location,
+                timeframe: lead.timeframe ?? lead.move_in_date,
+                motivation: lead.motivation,
+                budget: lead.budget,
+                asking_price: lead.asking_price ?? null,
+                financing: lead.financing,
+                next_action: lead.next_action,
+                ai_summary: lead.ai_summary ?? lead.qualification_summary,
+                summary_generated_at: lead.summary_generated_at ?? null,
+              }}
+              onUpdated={() => q.refetch()}
+            />
           </div>
 
           {/* Qualification Fields */}
@@ -134,24 +149,6 @@ function LeadDetailPage() {
 
         {/* Sidebar */}
         <aside className="space-y-4">
-          <div className="rounded-2xl border border-border bg-card p-6 text-center">
-            <div className="text-xs uppercase tracking-wide text-muted-foreground">Lead-Score</div>
-            <div className="mt-2 font-display text-5xl">
-              {lead.score_numeric}
-              <span className="text-2xl text-muted-foreground">/100</span>
-            </div>
-            <div className="mt-3 flex justify-center">
-              <ScorePill score={lead.score} num={lead.score_numeric} />
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-border bg-gradient-navy text-primary-foreground p-6">
-            <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-gold">
-              <Target className="size-3.5" /> Empfehlung
-            </div>
-            <p className="mt-2 text-sm leading-relaxed">{recommendation}</p>
-          </div>
-
           <div className="rounded-2xl border border-border bg-card p-6 text-sm">
             <div className="text-xs uppercase tracking-wide text-muted-foreground mb-3">Checkliste</div>
             <ul className="space-y-2">
@@ -175,12 +172,6 @@ function LeadDetailPage() {
   );
 }
 
-function defaultRecommendation(l: Lead): string {
-  if (l.score === "hot") return "Beratungstermin innerhalb von 24h vereinbaren.";
-  if (l.score === "warm") return "Per E-Mail nachfassen und offene Punkte (Budget/Zeitraum) klären.";
-  if (!l.email && !l.phone) return "Kontaktdaten anfragen – derzeit keine Rückmeldung möglich.";
-  return "Lead beobachten und in 7 Tagen erneut kontaktieren.";
-}
 
 function ContactRow({ icon: Icon, label, value, href }: { icon: typeof Mail; label: string; value: string; href: string }) {
   return (

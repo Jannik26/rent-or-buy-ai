@@ -198,7 +198,7 @@ export const Route = createFileRoute("/api/public/widget/chat")({
 
 const DATA_RE = /<<DATA>>([\s\S]*?)<<END>>/g;
 
-type LeadIntent = "kauf" | "verkauf" | "bewertung" | "miete";
+type LeadIntent = "kauf" | "verkauf" | "bewertung" | "miete" | "sonstiges";
 
 type ExtractedData = {
   name?: string;
@@ -212,6 +212,7 @@ type ExtractedData = {
   ownership_status?: string;
   usage_type?: string;
   budget?: string;
+  asking_price?: string;
   financing?: string;
   timeframe?: string;
   income?: string;
@@ -282,7 +283,7 @@ async function persistLeadFromTranscript(args: {
   const data = extractData(args.assistantText);
   const score = scoreFromData(data);
 
-  const ALLOWED_INTENTS = ["kauf", "miete", "verkauf", "bewertung"] as const;
+  const ALLOWED_INTENTS = ["kauf", "miete", "verkauf", "bewertung", "sonstiges"] as const;
   const intent: LeadIntent | "unbekannt" =
     data.intent && (ALLOWED_INTENTS as readonly string[]).includes(data.intent)
       ? (data.intent as LeadIntent)
@@ -306,6 +307,7 @@ async function persistLeadFromTranscript(args: {
     ownership_status: data.ownership_status ?? null,
     usage_type: data.usage_type ?? null,
     budget: data.budget ?? null,
+    asking_price: data.asking_price ?? null,
     financing: data.financing ?? null,
     timeframe: data.timeframe ?? null,
     income: data.income ?? null,
@@ -322,6 +324,7 @@ async function persistLeadFromTranscript(args: {
     messages: transcript as unknown as never,
   };
 
+  let finalLeadId: string | null = null;
   if (args.leadId) {
     const { data: existing } = await supabaseAdmin
       .from("leads")
@@ -330,11 +333,33 @@ async function persistLeadFromTranscript(args: {
       .maybeSingle();
     if (existing && existing.company_id !== args.companyId) {
       console.warn("[widget] leadId belongs to different company — inserting new lead instead");
-      await supabaseAdmin.from("leads").insert(payload);
-      return;
+      const ins = await supabaseAdmin.from("leads").insert(payload).select("id").maybeSingle();
+      finalLeadId = ins.data?.id ?? null;
+    } else {
+      await supabaseAdmin.from("leads").upsert({ id: args.leadId, ...payload });
+      finalLeadId = args.leadId;
     }
-    await supabaseAdmin.from("leads").upsert({ id: args.leadId, ...payload });
   } else {
-    await supabaseAdmin.from("leads").insert(payload);
+    const ins = await supabaseAdmin.from("leads").insert(payload).select("id").maybeSingle();
+    finalLeadId = ins.data?.id ?? null;
+  }
+
+  // ---- Auto-generate structured Lead-Summary once conversation is meaningful ----
+  const userMsgCount = args.messages.filter((m) => m.role === "user").length;
+  const hasContact = Boolean(data.name || data.email || data.phone);
+  if (finalLeadId && userMsgCount >= 3 && hasContact) {
+    try {
+      const key = process.env.LOVABLE_API_KEY;
+      if (key) {
+        const { generateLeadSummaryFromTranscript, summaryToLeadUpdate } = await import(
+          "@/lib/lead-summary.server"
+        );
+        const summary = await generateLeadSummaryFromTranscript(transcript, key);
+        await supabaseAdmin.from("leads").update(summaryToLeadUpdate(summary)).eq("id", finalLeadId);
+        console.log("[widget] structured lead summary generated", { leadId: finalLeadId });
+      }
+    } catch (err) {
+      console.error("[widget] auto-summary error", err);
+    }
   }
 }

@@ -15,7 +15,7 @@ export type Lead = {
   name: string | null;
   email: string | null;
   phone: string | null;
-  intent: "kauf" | "verkauf" | "bewertung" | "miete" | "unbekannt";
+  intent: "kauf" | "verkauf" | "bewertung" | "miete" | "sonstiges" | "unbekannt";
   property_type: string | null;
   location: string | null;
   object_desc: string | null;
@@ -23,6 +23,7 @@ export type Lead = {
   ownership_status: string | null;
   usage_type: string | null;
   budget: string | null;
+  asking_price: string | null;
   financing: string | null;
   timeframe: string | null;
   income: string | null;
@@ -34,6 +35,7 @@ export type Lead = {
   ai_summary: string | null;
   next_action: string | null;
   qualification_summary: string | null;
+  summary_generated_at: string | null;
   messages: { role: string; content: string }[];
   created_at: string;
 };
@@ -382,8 +384,9 @@ export function IntentChip({ intent }: { intent: Lead["intent"] }) {
     verkauf: { cls: "bg-gold/15 text-gold-foreground border-gold/30", label: "Verkäufer" },
     bewertung: { cls: "bg-info/10 text-info border-info/20", label: "Bewertung" },
     miete: { cls: "bg-accent text-primary border-border", label: "Mieter" },
+    sonstiges: { cls: "bg-muted text-muted-foreground border-border", label: "Sonstiges" },
   };
-  const c = map[intent];
+  const c = map[intent] ?? { cls: "bg-muted text-muted-foreground border-border", label: intent };
   return (
     <span className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold", c.cls)}>
       {c.label}
