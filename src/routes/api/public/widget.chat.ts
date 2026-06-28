@@ -283,7 +283,7 @@ async function persistLeadFromTranscript(args: {
   const data = extractData(args.assistantText);
   const score = scoreFromData(data);
 
-  const ALLOWED_INTENTS = ["kauf", "miete", "verkauf", "bewertung"] as const;
+  const ALLOWED_INTENTS = ["kauf", "miete", "verkauf", "bewertung", "sonstiges"] as const;
   const intent: LeadIntent | "unbekannt" =
     data.intent && (ALLOWED_INTENTS as readonly string[]).includes(data.intent)
       ? (data.intent as LeadIntent)
@@ -307,6 +307,7 @@ async function persistLeadFromTranscript(args: {
     ownership_status: data.ownership_status ?? null,
     usage_type: data.usage_type ?? null,
     budget: data.budget ?? null,
+    asking_price: data.asking_price ?? null,
     financing: data.financing ?? null,
     timeframe: data.timeframe ?? null,
     income: data.income ?? null,
