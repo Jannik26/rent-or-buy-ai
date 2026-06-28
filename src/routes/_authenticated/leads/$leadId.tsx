@@ -87,14 +87,27 @@ function LeadDetailPage() {
             {lead.phone && <ContactRow icon={Phone} label="Telefon" value={lead.phone} href={`tel:${lead.phone}`} />}
           </div>
 
-          {/* AI Summary */}
-          <div className="mt-6 rounded-2xl border border-border bg-gradient-to-br from-card to-accent/30 p-6">
-            <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
-              <Sparkles className="size-3.5 text-gold" /> KI-Zusammenfassung
-            </div>
-            <p className="mt-2 text-sm leading-relaxed text-foreground">
-              {lead.ai_summary ?? lead.qualification_summary ?? "Noch keine Zusammenfassung verfügbar – das Gespräch läuft."}
-            </p>
+          {/* AI Lead Summary Card */}
+          <div className="mt-6">
+            <LeadSummaryCard
+              lead={{
+                id: lead.id,
+                intent: lead.intent as LeadIntent,
+                score: lead.score as LeadScore,
+                score_numeric: lead.score_numeric,
+                property_type: lead.property_type,
+                location: lead.location,
+                timeframe: lead.timeframe ?? lead.move_in_date,
+                motivation: lead.motivation,
+                budget: lead.budget,
+                asking_price: lead.asking_price ?? null,
+                financing: lead.financing,
+                next_action: lead.next_action,
+                ai_summary: lead.ai_summary ?? lead.qualification_summary,
+                summary_generated_at: lead.summary_generated_at ?? null,
+              }}
+              onUpdated={() => q.refetch()}
+            />
           </div>
 
           {/* Qualification Fields */}
