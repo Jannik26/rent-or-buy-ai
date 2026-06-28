@@ -48,7 +48,7 @@ function LeadDetailPage() {
     else { toast.success("Status aktualisiert"); q.refetch(); }
   }
 
-  const recommendation = lead.next_action ?? defaultRecommendation(lead);
+  
 
   return (
     <div className="min-h-screen bg-background">
