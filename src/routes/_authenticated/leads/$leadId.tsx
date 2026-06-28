@@ -172,12 +172,6 @@ function LeadDetailPage() {
   );
 }
 
-function defaultRecommendation(l: Lead): string {
-  if (l.score === "hot") return "Beratungstermin innerhalb von 24h vereinbaren.";
-  if (l.score === "warm") return "Per E-Mail nachfassen und offene Punkte (Budget/Zeitraum) klären.";
-  if (!l.email && !l.phone) return "Kontaktdaten anfragen – derzeit keine Rückmeldung möglich.";
-  return "Lead beobachten und in 7 Tagen erneut kontaktieren.";
-}
 
 function ContactRow({ icon: Icon, label, value, href }: { icon: typeof Mail; label: string; value: string; href: string }) {
   return (
