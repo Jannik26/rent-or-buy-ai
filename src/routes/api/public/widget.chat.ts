@@ -198,7 +198,7 @@ export const Route = createFileRoute("/api/public/widget/chat")({
 
 const DATA_RE = /<<DATA>>([\s\S]*?)<<END>>/g;
 
-type LeadIntent = "kauf" | "verkauf" | "bewertung" | "miete";
+type LeadIntent = "kauf" | "verkauf" | "bewertung" | "miete" | "sonstiges";
 
 type ExtractedData = {
   name?: string;
@@ -212,6 +212,7 @@ type ExtractedData = {
   ownership_status?: string;
   usage_type?: string;
   budget?: string;
+  asking_price?: string;
   financing?: string;
   timeframe?: string;
   income?: string;
