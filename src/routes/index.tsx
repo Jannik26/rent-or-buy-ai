@@ -213,7 +213,7 @@ function Landing() {
         </div>
       </footer>
 
-      <FloatingWidget companyId={companyId} companyName={companyName} greeting={greeting} />
+      <FloatingWidget companyId={company.id} companyName={company.name} greeting={company.greeting} />
     </div>
   );
 }
