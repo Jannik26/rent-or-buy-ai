@@ -1,10 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { Building2, MessageCircle, Sparkles, Zap, ShieldCheck, ArrowRight, CheckCircle2, Clock, Target, BarChart3 } from "lucide-react";
 import { FloatingWidget } from "@/components/floating-widget";
+import { useEffectiveCompany } from "@/lib/use-effective-company";
 import logo from "@/assets/estateai-logo.png";
 import hero from "@/assets/hero-interior.jpg";
-
-const DEMO_COMPANY_ID = "00000000-0000-0000-0000-000000000000";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -15,19 +14,12 @@ export const Route = createFileRoute("/")({
       { property: "og:description", content: "Verwandeln Sie Immobilienanfragen in qualifizierte Termine." },
     ],
   }),
-  loader: async () => {
-    const { supabase } = await import("@/integrations/supabase/client");
-    const { data } = await supabase.from("companies").select("id, name, greeting").eq("id", DEMO_COMPANY_ID).maybeSingle();
-    return { demoCompany: data };
-  },
   component: Landing,
 });
 
 function Landing() {
-  const { demoCompany } = Route.useLoaderData();
-  const companyId = demoCompany?.id ?? DEMO_COMPANY_ID;
-  const companyName = demoCompany?.name ?? "EstateAI Demo Immobilien";
-  const greeting = demoCompany?.greeting ?? "Willkommen bei EstateAI. Wie kann ich Ihnen helfen?";
+  const company = useEffectiveCompany();
+
 
   return (
     <div className="min-h-screen bg-background text-foreground">
