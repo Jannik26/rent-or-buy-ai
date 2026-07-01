@@ -60,9 +60,22 @@ function Dashboard() {
       const { data, error } = await supabase
         .from("companies").select("id, name, greeting").eq("owner_id", user.id).maybeSingle();
       if (error) throw error;
-      return data as Company | null;
+      if (data) return data as Company;
+      // Safety net: auto-create a company for authenticated users that don't have one yet.
+      const fallbackName =
+        (user.user_metadata?.company_name as string | undefined) ||
+        (user.user_metadata?.full_name ? `${user.user_metadata.full_name} Immobilien` : null) ||
+        "Meine Firma";
+      const { data: created, error: insErr } = await supabase
+        .from("companies")
+        .insert({ owner_id: user.id, name: fallbackName })
+        .select("id, name, greeting")
+        .single();
+      if (insErr) throw insErr;
+      return created as Company;
     },
   });
+
   const company = companyQuery.data;
 
   const profileQuery = useQuery({
