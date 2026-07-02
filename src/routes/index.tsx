@@ -213,7 +213,9 @@ function Landing() {
         </div>
       </footer>
 
-      <FloatingWidget companyId={company.id} companyName={company.name} greeting={company.greeting} />
+      {company && (
+        <FloatingWidget companyId={company.id} companyName={company.name} greeting={company.greeting} />
+      )}
     </div>
   );
 }
