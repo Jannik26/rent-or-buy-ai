@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import { SetterChat } from "@/components/setter-chat";
-import { useEffectiveCompany } from "@/lib/use-effective-company";
+import { useEffectiveCompany, DEMO_COMPANY } from "@/lib/use-effective-company";
 import logo from "@/assets/estateai-logo.png";
 
 export const Route = createFileRoute("/demo")({
