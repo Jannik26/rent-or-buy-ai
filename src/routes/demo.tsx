@@ -10,8 +10,11 @@ export const Route = createFileRoute("/demo")({
 });
 
 function DemoPage() {
-  // Authenticated users chat with their own tenant; anonymous visitors get the shared demo company.
+  // Authenticated users chat with their own tenant; confirmed anonymous visitors get the shared demo company.
   const resolved = useEffectiveCompany();
+  if (resolved === undefined) {
+    return <div className="h-screen grid place-items-center text-sm text-muted-foreground">Lade…</div>;
+  }
   const company = resolved ?? DEMO_COMPANY;
 
   return (

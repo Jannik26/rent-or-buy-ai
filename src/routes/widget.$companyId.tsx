@@ -11,6 +11,7 @@ function WidgetPage() {
   const [company, setCompany] = useState<{ name: string; greeting: string } | null>(null);
 
   useEffect(() => {
+    console.log("[EstateAI WidgetPage] route companyId", companyId);
     (async () => {
       const { supabase } = await import("@/integrations/supabase/client");
       const { data } = await supabase.from("companies").select("name, greeting").eq("id", companyId).maybeSingle();

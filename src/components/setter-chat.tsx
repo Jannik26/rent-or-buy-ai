@@ -47,6 +47,10 @@ export function SetterChat({
 }) {
   const leadId = useMemo(() => getOrCreateLeadId(companyId), [companyId]);
 
+  useEffect(() => {
+    console.log("[EstateChat] active companyId", { companyId, companyName, leadId });
+  }, [companyId, companyName, leadId]);
+
   const transport = useMemo(
     () =>
       new DefaultChatTransport({
