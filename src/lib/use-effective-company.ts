@@ -13,12 +13,13 @@ const DEFAULT_GREETING = "Willkommen bei EstateAI. Wie kann ich Ihnen helfen?";
 
 /**
  * Returns the currently authenticated user's own company (auto-creating one
- * if missing). Returns `null` for anonymous visitors — callers should decide
- * whether to hide the widget or fall back to the shared demo company (which
- * must only ever happen on the public /demo page).
+ * if missing). Returns `undefined` while auth is still being resolved and
+ * `null` only for confirmed anonymous visitors — callers should decide whether
+ * to hide the widget or fall back to the shared demo company (which must only
+ * ever happen on the public /demo page).
  */
 export function useEffectiveCompany(initial?: EffectiveCompany | null) {
-  const [company, setCompany] = useState<EffectiveCompany | null>(initial ?? null);
+  const [company, setCompany] = useState<EffectiveCompany | null | undefined>(initial);
 
   useEffect(() => {
     let cancelled = false;

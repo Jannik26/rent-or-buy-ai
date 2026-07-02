@@ -10,11 +10,22 @@ const corsHeaders = {
 };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const DEMO_COMPANY_ID = "00000000-0000-0000-0000-000000000000";
 const MAX_MESSAGES = 50;
 const MAX_CHARS_PER_MSG = 4000;
 const USER_DATA_MARKER_RE = /<<DATA>>|<<END>>/gi;
 
 type Body = { messages?: UIMessage[]; companyId?: string; leadId?: string | null };
+
+function isPublicDemoRequest(request: Request) {
+  const ref = request.headers.get("referer") ?? request.headers.get("referrer") ?? "";
+  if (!ref) return false;
+  try {
+    return new URL(ref).pathname === "/demo";
+  } catch {
+    return false;
+  }
+}
 
 function sanitizeUserMessages(messages: UIMessage[]): UIMessage[] {
   return messages.slice(-MAX_MESSAGES).map((m) => {
@@ -52,6 +63,15 @@ export const Route = createFileRoute("/api/public/widget/chat")({
           }
           if (rawMessages.length === 0) {
             return new Response(JSON.stringify({ error: "Keine Nachrichten." }), {
+              status: 400,
+              headers: { ...corsHeaders, "content-type": "application/json" },
+            });
+          }
+          if (companyId === DEMO_COMPANY_ID && !isPublicDemoRequest(request)) {
+            console.warn("[widget] blocked demo company outside public /demo", {
+              referer: request.headers.get("referer") ?? request.headers.get("referrer") ?? null,
+            });
+            return new Response(JSON.stringify({ error: "Demo-Unternehmen ist nur auf der öffentlichen Demo erlaubt." }), {
               status: 400,
               headers: { ...corsHeaders, "content-type": "application/json" },
             });
@@ -157,6 +177,7 @@ export const Route = createFileRoute("/api/public/widget/chat")({
                   context: { companyId: company.id, chars: text.length },
                 });
               try {
+                console.log("companyId received:", companyId);
                 await persistLeadFromTranscript({
                   companyId: company.id,
                   leadId,
@@ -269,6 +290,7 @@ async function persistLeadFromTranscript(args: {
   messages: UIMessage[];
   assistantText: string;
 }) {
+  console.log("Saving lead for company:", args.companyId);
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
 
   const transcript = args.messages.map((m) => ({

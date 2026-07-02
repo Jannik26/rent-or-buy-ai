@@ -6,6 +6,7 @@
     console.error("[EstateAI] Missing data-estateai attribute on script tag");
     return;
   }
+  console.log("[EstateAI] embed companyId", companyId);
   var origin = new URL(script.src).origin;
 
   // Floating button
