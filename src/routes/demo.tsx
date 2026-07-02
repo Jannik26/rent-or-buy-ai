@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import { SetterChat } from "@/components/setter-chat";
-import { useEffectiveCompany } from "@/lib/use-effective-company";
+import { useEffectiveCompany, DEMO_COMPANY } from "@/lib/use-effective-company";
 import logo from "@/assets/estateai-logo.png";
 
 export const Route = createFileRoute("/demo")({
@@ -10,7 +10,9 @@ export const Route = createFileRoute("/demo")({
 });
 
 function DemoPage() {
-  const company = useEffectiveCompany();
+  // Authenticated users chat with their own tenant; anonymous visitors get the shared demo company.
+  const resolved = useEffectiveCompany();
+  const company = resolved ?? DEMO_COMPANY;
 
   return (
     <div className="min-h-screen bg-muted/30 flex flex-col">
