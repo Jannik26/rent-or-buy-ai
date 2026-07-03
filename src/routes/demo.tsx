@@ -13,9 +13,13 @@ function DemoPage() {
   // Authenticated users chat with their own tenant; confirmed anonymous visitors get the shared demo company.
   const resolved = useEffectiveCompany();
   if (resolved === undefined) {
+    // still resolving auth/company — do NOT fall back to demo yet
     return <div className="h-screen grid place-items-center text-sm text-muted-foreground">Lade…</div>;
   }
-  const company = resolved ?? DEMO_COMPANY;
+  // resolved === null → confirmed anonymous visitor: demo company is only allowed here (public /demo)
+  // resolved exists → authenticated user: always use their own company.id
+  const company = resolved === null ? DEMO_COMPANY : resolved;
+  console.log("[DemoPage] companyId passed to SetterChat:", company.id, "(resolved:", resolved, ")");
 
   return (
     <div className="min-h-screen bg-muted/30 flex flex-col">
