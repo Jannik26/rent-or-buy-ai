@@ -19,6 +19,11 @@ export const Route = createFileRoute("/")({
 
 function Landing() {
   const company = useEffectiveCompany();
+  // undefined = still resolving auth, null = anonymous visitor.
+  // The landing page NEVER falls back to DEMO_COMPANY — the demo company is only allowed on /demo.
+  // The widget only renders once we have a real, authenticated company.
+  console.log("[Landing] resolved company:", company, "→ widget companyId:", company?.id ?? "(hidden)");
+
 
 
   return (
