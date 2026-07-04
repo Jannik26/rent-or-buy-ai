@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { generateText } from "ai";
-import { createLovableAiGatewayProvider } from "@/lib/ai-gateway.server";
+import { createAnthropicProvider } from "@/lib/ai-gateway.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 const DEMO_COMPANY_ID = "00000000-0000-0000-0000-000000000000";
@@ -9,7 +9,7 @@ export type DiagnosticsResult = {
   checkedAt: string;
   companyId: { ok: boolean; value: string };
   supabase: { ok: boolean; detail: string };
-  lovableApiKey: { ok: boolean; detail: string };
+  anthropicApiKey: { ok: boolean; detail: string };
   aiModel: { ok: boolean; detail: string; sample?: string };
   lastError: { at: string; source: string; message: string } | null;
   lastSuccess: { at: string; source: string; message: string } | null;
@@ -55,8 +55,8 @@ export const runDiagnostics = createServerFn({ method: "POST" })
     }
 
     // API key
-    const key = process.env.LOVABLE_API_KEY;
-    const lovableApiKey = key
+    const key = process.env.ANTHROPIC_API_KEY;
+    const anthropicApiKey = key
       ? { ok: true, detail: `Vorhanden (Länge ${key.length})` }
       : { ok: false, detail: "Fehlt – KI-Aufrufe werden fehlschlagen." };
 
@@ -64,9 +64,9 @@ export const runDiagnostics = createServerFn({ method: "POST" })
     let aiModel: DiagnosticsResult["aiModel"] = { ok: false, detail: "Nicht geprüft" };
     if (key) {
       try {
-        const gateway = createLovableAiGatewayProvider(key);
+        const anthropic = createAnthropicProvider(key);
         const { text } = await generateText({
-          model: gateway("google/gemini-3-flash-preview"),
+          model: anthropic("claude-sonnet-5"),
           prompt: "Antworte mit genau einem Wort: pong",
         });
         aiModel = { ok: true, detail: "Modell antwortet", sample: text.trim().slice(0, 80) };
@@ -107,6 +107,6 @@ export const runDiagnostics = createServerFn({ method: "POST" })
       /* ignore */
     }
 
-    return { checkedAt, companyId, supabase, lovableApiKey, aiModel, lastError, lastSuccess };
+    return { checkedAt, companyId, supabase, anthropicApiKey, aiModel, lastError, lastSuccess };
   });
 

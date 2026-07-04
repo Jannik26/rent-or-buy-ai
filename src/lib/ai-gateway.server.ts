@@ -1,12 +1,5 @@
-import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
+import { createAnthropic } from "@ai-sdk/anthropic";
 
-export function createLovableAiGatewayProvider(lovableApiKey: string) {
-  return createOpenAICompatible({
-    name: "lovable",
-    baseURL: "https://ai.gateway.lovable.dev/v1",
-    headers: {
-      "Lovable-API-Key": lovableApiKey,
-      "X-Lovable-AIG-SDK": "vercel-ai-sdk",
-    },
-  });
+export function createAnthropicProvider(apiKey: string) {
+  return createAnthropic({ apiKey });
 }

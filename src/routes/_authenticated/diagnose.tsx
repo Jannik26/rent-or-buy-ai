@@ -99,9 +99,9 @@ function DiagnosePage() {
                 detail={`Demo-ID ${data.companyId.value}${data.companyId.ok ? "" : " – Firma nicht in DB gefunden"}`}
               />
               <Row label="Supabase verbunden" ok={data.supabase.ok} detail={data.supabase.detail} />
-              <Row label="LOVABLE_API_KEY vorhanden" ok={data.lovableApiKey.ok} detail={data.lovableApiKey.detail} />
+              <Row label="ANTHROPIC_API_KEY vorhanden" ok={data.anthropicApiKey.ok} detail={data.anthropicApiKey.detail} />
               <Row
-                label="KI-Modell erreichbar (google/gemini-3-flash-preview)"
+                label="KI-Modell erreichbar (claude-sonnet-5)"
                 ok={data.aiModel.ok}
                 detail={data.aiModel.sample ? `${data.aiModel.detail} · Antwort: „${data.aiModel.sample}"` : data.aiModel.detail}
               />

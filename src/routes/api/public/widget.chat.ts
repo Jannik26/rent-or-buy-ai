@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { convertToModelMessages, streamText, type UIMessage } from "ai";
-import { createLovableAiGatewayProvider } from "@/lib/ai-gateway.server";
+import { createAnthropicProvider } from "@/lib/ai-gateway.server";
 import { buildSystemPrompt } from "@/lib/chat-prompt";
 
 const corsHeaders = {
@@ -81,11 +81,11 @@ export const Route = createFileRoute("/api/public/widget/chat")({
 
           const messages = sanitizeUserMessages(rawMessages as UIMessage[]);
 
-          const key = process.env.LOVABLE_API_KEY;
+          const key = process.env.ANTHROPIC_API_KEY;
           if (!key) {
-            console.error("[widget] LOVABLE_API_KEY fehlt");
+            console.error("[widget] ANTHROPIC_API_KEY fehlt");
             return new Response(
-              JSON.stringify({ error: "KI-Dienst ist nicht konfiguriert (LOVABLE_API_KEY fehlt)." }),
+              JSON.stringify({ error: "KI-Dienst ist nicht konfiguriert (ANTHROPIC_API_KEY fehlt)." }),
               { status: 500, headers: { ...corsHeaders, "content-type": "application/json" } },
             );
           }
@@ -147,8 +147,8 @@ export const Route = createFileRoute("/api/public/widget/chat")({
             );
           }
 
-          const gateway = createLovableAiGatewayProvider(key);
-          const model = gateway("google/gemini-3-flash-preview");
+          const anthropic = createAnthropicProvider(key);
+          const model = anthropic("claude-sonnet-5");
 
           const result = streamText({
             model,
@@ -371,7 +371,7 @@ async function persistLeadFromTranscript(args: {
   const hasContact = Boolean(data.name || data.email || data.phone);
   if (finalLeadId && userMsgCount >= 3 && hasContact) {
     try {
-      const key = process.env.LOVABLE_API_KEY;
+      const key = process.env.ANTHROPIC_API_KEY;
       if (key) {
         const { generateLeadSummaryFromTranscript, summaryToLeadUpdate } = await import(
           "@/lib/lead-summary.server"

@@ -1,5 +1,5 @@
 import { generateText, Output } from "ai";
-import { createLovableAiGatewayProvider } from "@/lib/ai-gateway.server";
+import { createAnthropicProvider } from "@/lib/ai-gateway.server";
 import { LeadSummarySchema, buildSummaryInstructions, type LeadSummary } from "@/lib/lead-summary-schema";
 
 type Msg = { role: string; content: string };
@@ -15,9 +15,9 @@ export async function generateLeadSummaryFromTranscript(
   messages: Msg[],
   apiKey: string,
 ): Promise<LeadSummary> {
-  const gateway = createLovableAiGatewayProvider(apiKey);
+  const anthropic = createAnthropicProvider(apiKey);
   const { experimental_output } = await generateText({
-    model: gateway("google/gemini-3-flash-preview"),
+    model: anthropic("claude-sonnet-5"),
     experimental_output: Output.object({ schema: LeadSummarySchema }),
     system: buildSummaryInstructions(),
     prompt: `Transkript:\n\n${transcriptToPrompt(messages)}`,

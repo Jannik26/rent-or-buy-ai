@@ -27,7 +27,7 @@ export const regenerateLeadSummary = createServerFn({ method: "POST" })
     const messages = (lead.messages ?? []) as Msg[];
     if (messages.length === 0) throw new Error("Keine Nachrichten im Transkript.");
 
-    const key = process.env.LOVABLE_API_KEY;
+    const key = process.env.ANTHROPIC_API_KEY;
     if (!key) throw new Error("AI-Gateway-Key fehlt");
 
     const { generateLeadSummaryFromTranscript, summaryToLeadUpdate } = await import(
