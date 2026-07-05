@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { Building2, MessageCircle, Sparkles, Zap, ShieldCheck, ArrowRight, CheckCircle2, Clock, Target, BarChart3 } from "lucide-react";
 import { FloatingWidget } from "@/components/floating-widget";
 import { useEffectiveCompany } from "@/lib/use-effective-company";
@@ -24,7 +25,23 @@ function Landing() {
   // The widget only renders once we have a real, authenticated company.
   console.log("[Landing] resolved company:", company, "→ widget companyId:", company?.id ?? "(hidden)");
 
+  const [redirectingToRecovery, setRedirectingToRecovery] = useState(false);
 
+  useEffect(() => {
+    // Safety net: if Supabase's redirect-URL allowlist isn't configured for
+    // /reset-password, recovery links land here with the token in the hash
+    // instead. Forward them so the link still works.
+    const hash = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : "";
+    const hashParams = new URLSearchParams(hash);
+    const searchParams = new URLSearchParams(window.location.search);
+    const isRecovery = hashParams.get("type") === "recovery" || searchParams.get("type") === "recovery";
+    if (isRecovery) {
+      setRedirectingToRecovery(true);
+      window.location.replace(`/reset-password${window.location.search}${window.location.hash}`);
+    }
+  }, []);
+
+  if (redirectingToRecovery) return null;
 
   return (
     <div className="min-h-screen bg-background text-foreground">

@@ -46,6 +46,31 @@ export const SCORE_LABEL: Record<LeadScore, string> = {
   cold: "🔵 Cold",
 };
 
+/** Single source of truth for hot/warm/cold display (emoji, label, colors) — used by every badge/pill in the app. */
+export const SCORE_CONFIG: Record<LeadScore, { emoji: string; label: string; text: string; badgeCls: string; gradientCls: string }> = {
+  hot: {
+    emoji: "🔥",
+    label: "Hot",
+    text: "text-destructive",
+    badgeCls: "bg-destructive/10 text-destructive border-destructive/20",
+    gradientCls: "from-destructive/20 to-destructive/5 text-destructive",
+  },
+  warm: {
+    emoji: "🟠",
+    label: "Warm",
+    text: "text-gold",
+    badgeCls: "bg-gold/15 text-gold border-gold/30",
+    gradientCls: "from-gold/25 to-gold/5 text-gold",
+  },
+  cold: {
+    emoji: "🔵",
+    label: "Cold",
+    text: "text-info",
+    badgeCls: "bg-info/10 text-info border-info/20",
+    gradientCls: "from-info/15 to-info/5 text-info",
+  },
+};
+
 export function buildSummaryInstructions(): string {
   return `Du bist ein Immobilien-Vertriebsanalyst. Analysiere das Chat-Transkript zwischen einem Immobilien-KI-Assistenten und einem Interessenten und erstelle eine strukturierte Lead-Zusammenfassung.
 

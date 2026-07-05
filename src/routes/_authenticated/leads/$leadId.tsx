@@ -76,7 +76,7 @@ function LeadDetailPage() {
               </div>
               <div className="mt-3 flex items-center gap-2 flex-wrap">
                 <IntentChip intent={lead.intent} />
-                <StatusBadge status={lead.status} />
+                <StatusBadge status={lead.status} score={lead.score} />
               </div>
             </div>
           </div>

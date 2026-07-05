@@ -5,9 +5,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import {
   ArrowRight, ArrowUpRight, Building2, Calendar, Check, Code2, Copy, ExternalLink,
-  Flame, Search, Snowflake, Sparkles, TrendingUp, Users,
+  Flame, Search, Sparkles, TrendingUp, Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { SCORE_CONFIG } from "@/lib/lead-summary-schema";
 
 
 export type Lead = {
@@ -353,15 +354,10 @@ export function ScoreBar({ score, num }: { score: "hot" | "warm" | "cold"; num: 
 
 // Backwards-compat export still used in lead detail page
 export function ScorePill({ score, num }: { score: "hot" | "warm" | "cold"; num: number }) {
-  const cfg = {
-    hot: { cls: "bg-destructive/10 text-destructive", label: "HOT", Icon: Flame },
-    warm: { cls: "bg-warning/15 text-warning", label: "WARM", Icon: Sparkles },
-    cold: { cls: "bg-info/10 text-info", label: "COLD", Icon: Snowflake },
-  }[score];
-  const Icon = cfg.Icon;
+  const cfg = SCORE_CONFIG[score];
   return (
-    <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold", cfg.cls)}>
-      <Icon className="size-3.5" /> {cfg.label} · {num}/100
+    <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold", cfg.badgeCls)}>
+      <span>{cfg.emoji}</span> {cfg.label.toUpperCase()} · {num}/100
     </span>
   );
 }
@@ -369,16 +365,12 @@ export function ScorePill({ score, num }: { score: "hot" | "warm" | "cold"; num:
 export function StatusBadge({ status, score }: { status: string; score?: "hot" | "warm" | "cold" }) {
   // Combined status that prioritizes lead temperature
   const temp = score ?? "cold";
-  const tempCfg = {
-    hot: { emoji: "🔥", label: "Hot", cls: "bg-destructive/10 text-destructive border-destructive/20" },
-    warm: { emoji: "🟡", label: "Warm", cls: "bg-warning/15 text-warning border-warning/20" },
-    cold: { emoji: "⚪", label: "Cold", cls: "bg-info/10 text-info border-info/20" },
-  }[temp];
+  const tempCfg = SCORE_CONFIG[temp];
   const isMeeting = status === "termin";
   const isQualified = status === "qualifiziert";
   return (
     <div className="flex flex-col gap-1 items-start">
-      <span className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold", tempCfg.cls)}>
+      <span className={cn("inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-semibold", tempCfg.badgeCls)}>
         <span>{tempCfg.emoji}</span> {tempCfg.label}
       </span>
       {(isMeeting || isQualified) && (

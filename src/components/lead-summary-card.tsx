@@ -4,7 +4,7 @@ import { toast } from "sonner";
 import { Banknote, Clock, Flame, Home, MapPin, RefreshCw, Sparkles, Target, TrendingUp, Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { regenerateLeadSummary } from "@/lib/lead-summary.functions";
-import { INTENT_LABEL, SCORE_LABEL, type LeadIntent, type LeadScore } from "@/lib/lead-summary-schema";
+import { SCORE_CONFIG, type LeadIntent, type LeadScore } from "@/lib/lead-summary-schema";
 
 type LeadLike = {
   id: string;
@@ -34,23 +34,25 @@ export function LeadSummaryCard({ lead, onUpdated }: { lead: LeadLike; onUpdated
     onError: (e: unknown) => toast.error(e instanceof Error ? e.message : "Fehler bei der KI-Analyse"),
   });
 
-  const scoreColor =
-    lead.score === "hot"
-      ? "from-destructive/20 to-destructive/5 text-destructive"
-      : lead.score === "warm"
-        ? "from-gold/25 to-gold/5 text-gold"
-        : "from-info/15 to-info/5 text-info";
-
+  const scoreCfg = SCORE_CONFIG[lead.score];
   const showBudget = lead.intent === "kauf" || lead.intent === "miete";
   const showAsking = lead.intent === "verkauf" || lead.intent === "bewertung";
 
   return (
-    <section className="rounded-2xl border border-border bg-card shadow-soft overflow-hidden">
-      <header className="flex items-center justify-between gap-3 border-b border-border px-6 py-4">
+    <section className="rounded-2xl border border-border bg-card shadow-soft">
+      <header className="flex flex-wrap items-center justify-between gap-3 px-6 py-4 border-b border-border">
         <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
           <Sparkles className="size-3.5 text-gold" /> KI-Lead-Zusammenfassung
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <span className={cn("inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold", scoreCfg.badgeCls)}>
+              <span>{scoreCfg.emoji}</span> {scoreCfg.label}
+            </span>
+            <span className="font-display text-lg text-foreground tabular-nums">
+              {lead.score_numeric}<span className="text-xs font-sans text-muted-foreground">/100</span>
+            </span>
+          </div>
           {lead.summary_generated_at && (
             <span className="hidden sm:inline text-[11px] text-muted-foreground">
               Aktualisiert {new Date(lead.summary_generated_at).toLocaleString("de-DE")}
@@ -67,61 +69,51 @@ export function LeadSummaryCard({ lead, onUpdated }: { lead: LeadLike; onUpdated
         </div>
       </header>
 
-      <div className="grid lg:grid-cols-[260px_1fr] gap-0">
-        {/* Score column */}
-        <div className={cn("relative bg-gradient-to-br p-6 flex flex-col items-center justify-center text-center border-r border-border", scoreColor)}>
-          <div className="text-xs uppercase tracking-wide text-muted-foreground">Lead-Score</div>
-          <div className="mt-1 font-display text-6xl text-foreground tabular-nums">
-            {lead.score_numeric}
-            <span className="text-2xl text-muted-foreground">/100</span>
+      <div className="p-6 space-y-6">
+        {/* Recommended next action — most prominent */}
+        <div className="rounded-xl bg-gold/8 p-4 flex items-start gap-3">
+          <div className="size-8 rounded-lg bg-gold/15 grid place-items-center text-gold shrink-0">
+            <Target className="size-4" />
           </div>
-          <div className="mt-3 rounded-full bg-background/80 backdrop-blur px-3 py-1 text-xs font-semibold">
-            {SCORE_LABEL[lead.score]}
-          </div>
-          <div className="mt-4 text-xs font-medium uppercase tracking-wide text-muted-foreground">Absicht</div>
-          <div className="mt-0.5 text-sm font-semibold text-foreground">{INTENT_LABEL[lead.intent]}</div>
-        </div>
-
-        {/* Facts grid */}
-        <div className="p-6 space-y-5">
-          <p className="text-sm leading-relaxed text-foreground">
-            {lead.ai_summary ?? "Noch keine KI-Zusammenfassung — klicken Sie auf »KI-Analyse aktualisieren«, sobald das Gespräch beendet ist."}
-          </p>
-
-          <dl className="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
-            <Fact icon={Home} label="Immobilientyp" value={lead.property_type} />
-            <Fact icon={MapPin} label="Stadt / Region" value={lead.location} />
-            <Fact icon={Clock} label="Zeitraum" value={lead.timeframe} />
-            <Fact icon={Flame} label="Motivation" value={lead.motivation} />
-            {showBudget && <Fact icon={Wallet} label="Budget" value={lead.budget} />}
-            {showAsking && <Fact icon={Banknote} label="Preisvorstellung" value={lead.asking_price} />}
-            <Fact icon={TrendingUp} label="Finanzierung" value={lead.financing} />
-          </dl>
-
-          <div className="rounded-xl border border-gold/30 bg-gold/5 p-4 flex items-start gap-3">
-            <div className="size-8 rounded-lg bg-gold/15 grid place-items-center text-gold shrink-0">
-              <Target className="size-4" />
-            </div>
-            <div className="min-w-0">
-              <div className="text-[11px] uppercase tracking-wide text-gold font-semibold">Empfohlene nächste Aktion</div>
-              <div className="mt-0.5 text-sm font-medium text-foreground">
-                {lead.next_action ?? "—"}
-              </div>
+          <div className="min-w-0">
+            <div className="text-[11px] uppercase tracking-wide text-gold font-semibold">Empfohlene nächste Aktion</div>
+            <div className="mt-0.5 text-base font-medium text-foreground">
+              {lead.next_action ?? "—"}
             </div>
           </div>
         </div>
+
+        {/* AI summary */}
+        <p className="max-w-[65ch] text-sm leading-relaxed text-foreground">
+          {lead.ai_summary ?? "Noch keine KI-Zusammenfassung — klicken Sie auf »KI-Analyse aktualisieren«, sobald das Gespräch beendet ist."}
+        </p>
+
+        {/* Primary facts */}
+        <dl className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-4 text-sm">
+          <Fact icon={Home} label="Immobilientyp" value={lead.property_type} />
+          <Fact icon={MapPin} label="Stadt / Region" value={lead.location} />
+          <Fact icon={Clock} label="Zeitraum" value={lead.timeframe} />
+          <Fact icon={Flame} label="Motivation" value={lead.motivation} />
+        </dl>
+
+        {/* Secondary facts */}
+        <dl className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3 border-t border-border/60 pt-4">
+          {showBudget && <Fact icon={Wallet} label="Budget" value={lead.budget} muted />}
+          {showAsking && <Fact icon={Banknote} label="Preisvorstellung" value={lead.asking_price} muted />}
+          <Fact icon={TrendingUp} label="Finanzierung" value={lead.financing} muted />
+        </dl>
       </div>
     </section>
   );
 }
 
-function Fact({ icon: Icon, label, value }: { icon: typeof Home; label: string; value: string | null | undefined }) {
+function Fact({ icon: Icon, label, value, muted }: { icon: typeof Home; label: string; value: string | null | undefined; muted?: boolean }) {
   return (
-    <div className="rounded-xl border border-border bg-background p-3">
-      <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
+    <div className="min-w-0">
+      <dt className={cn("flex items-center gap-1.5 uppercase tracking-wide", muted ? "text-[10px] text-muted-foreground/70" : "text-[11px] text-muted-foreground")}>
         <Icon className="size-3.5" /> {label}
-      </div>
-      <div className="mt-1 text-sm font-medium text-foreground break-words">{value || "—"}</div>
+      </dt>
+      <dd className={cn("mt-1 break-words text-foreground", muted ? "text-xs font-medium" : "text-sm font-medium")}>{value || "—"}</dd>
     </div>
   );
 }
