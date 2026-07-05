@@ -1,7 +1,7 @@
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Send, ShoppingBag, Tag, Scale } from "lucide-react";
+import { Send, ShoppingBag, Tag, Scale, RotateCcw } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { cn } from "@/lib/utils";
 
@@ -45,7 +45,11 @@ export function SetterChat({
   apiBase?: string;
   variant?: "inline" | "panel";
 }) {
-  const leadId = useMemo(() => getOrCreateLeadId(companyId), [companyId]);
+  const [leadId, setLeadId] = useState(() => getOrCreateLeadId(companyId));
+
+  useEffect(() => {
+    setLeadId(getOrCreateLeadId(companyId));
+  }, [companyId]);
 
   useEffect(() => {
     console.log("[EstateChat] active companyId", { companyId, companyName, leadId });
@@ -73,7 +77,7 @@ export function SetterChat({
 
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const { messages, sendMessage, status } = useChat({
+  const { messages, sendMessage, setMessages, stop, status } = useChat({
     id: leadId,
     messages: initialMessages,
     transport,
@@ -126,6 +130,18 @@ export function SetterChat({
     void sendMessage({ text });
   }
 
+  function startNewConversation() {
+    stop();
+    const key = `estateai_lead_${companyId}`;
+    sessionStorage.removeItem(key);
+    const newId = crypto.randomUUID();
+    sessionStorage.setItem(key, newId);
+    setLeadId(newId);
+    setMessages(initialMessages);
+    setInput("");
+    setErrorMsg(null);
+  }
+
   return (
     <div
       className={cn(
@@ -141,6 +157,15 @@ export function SetterChat({
             <span className="size-1.5 rounded-full bg-success animate-pulse" /> Online · EstateAI-Berater
           </div>
         </div>
+        <button
+          type="button"
+          onClick={startNewConversation}
+          className="ml-auto shrink-0 rounded-lg p-1.5 text-primary-foreground/70 hover:text-primary-foreground hover:bg-white/10 transition"
+          aria-label="Neue Anfrage starten"
+          title="Neue Anfrage starten"
+        >
+          <RotateCcw className="size-4" />
+        </button>
       </header>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-5 space-y-4 bg-muted/30">
