@@ -284,6 +284,35 @@ function scoreFromData(d: ExtractedData): { label: "hot" | "warm" | "cold"; num:
   return { label, num };
 }
 
+const MERGE_FIELDS = [
+  "name",
+  "email",
+  "phone",
+  "property_type",
+  "location",
+  "object_desc",
+  "motivation",
+  "ownership_status",
+  "usage_type",
+  "budget",
+  "asking_price",
+  "financing",
+  "timeframe",
+  "income",
+  "household_size",
+  "move_in_date",
+] as const;
+
+type MergeField = (typeof MERGE_FIELDS)[number];
+type ExistingLeadRow = Partial<Record<MergeField, string | null>> & {
+  company_id: string;
+  intent: string | null;
+  status: string | null;
+  ai_summary: string | null;
+  next_action: string | null;
+  qualification_summary: string | null;
+};
+
 async function persistLeadFromTranscript(args: {
   companyId: string;
   leadId: string | null;
@@ -303,64 +332,73 @@ async function persistLeadFromTranscript(args: {
   });
 
   const data = extractData(args.assistantText);
-  const score = scoreFromData(data);
+
+  // ---- Load the existing lead (if any) so this turn's delta merges with prior
+  // turns instead of overwriting already-known fields with null. ----
+  let existingLead: ExistingLeadRow | null = null;
+  let existingLeadFound = false;
+  let existingLeadSameCompany = false;
+  if (args.leadId) {
+    const { data: existing } = await supabaseAdmin
+      .from("leads")
+      .select(
+        "name, email, phone, property_type, location, object_desc, motivation, ownership_status, usage_type, budget, asking_price, financing, timeframe, income, household_size, move_in_date, company_id, intent, status, ai_summary, next_action, qualification_summary",
+      )
+      .eq("id", args.leadId)
+      .maybeSingle();
+    if (existing) {
+      existingLeadFound = true;
+      existingLeadSameCompany = existing.company_id === args.companyId;
+      if (existingLeadSameCompany) existingLead = existing as unknown as ExistingLeadRow;
+    }
+  }
+
+  const merged = Object.fromEntries(
+    MERGE_FIELDS.map((field) => [field, data[field] ?? existingLead?.[field] ?? null]),
+  ) as Record<MergeField, string | null>;
 
   const ALLOWED_INTENTS = ["kauf", "miete", "verkauf", "bewertung", "sonstiges"] as const;
   const intent: LeadIntent | "unbekannt" =
     data.intent && (ALLOWED_INTENTS as readonly string[]).includes(data.intent)
       ? (data.intent as LeadIntent)
-      : "unbekannt";
+      : ((existingLead?.intent as LeadIntent | "unbekannt" | null) ?? "unbekannt");
   const ALLOWED_STATUS = ["neu", "qualifiziert", "termin"] as const;
   const status =
     data._status && (ALLOWED_STATUS as readonly string[]).includes(data._status)
       ? data._status
-      : "neu";
+      : (existingLead?.status ?? "neu");
+
+  const score = scoreFromData({
+    ...merged,
+    intent: intent as LeadIntent,
+    _score: data._score,
+    _score_num: data._score_num,
+  } as ExtractedData);
 
   const payload = {
     company_id: args.companyId,
-    name: data.name ?? null,
-    email: data.email ?? null,
-    phone: data.phone ?? null,
+    ...merged,
     intent: intent as never,
-    property_type: data.property_type ?? null,
-    location: data.location ?? null,
-    object_desc: data.object_desc ?? null,
-    motivation: data.motivation ?? null,
-    ownership_status: data.ownership_status ?? null,
-    usage_type: data.usage_type ?? null,
-    budget: data.budget ?? null,
-    asking_price: data.asking_price ?? null,
-    financing: data.financing ?? null,
-    timeframe: data.timeframe ?? null,
-    income: data.income ?? null,
-    household_size: data.household_size ?? null,
-    move_in_date: data.move_in_date ?? null,
     score: score.label,
     score_numeric: score.num,
     status,
-    ai_summary: data._summary ?? null,
-    next_action: data._next_action ?? null,
+    ai_summary: data._summary ?? existingLead?.ai_summary ?? null,
+    next_action: data._next_action ?? existingLead?.next_action ?? null,
     qualification_summary:
       data._summary ??
+      existingLead?.qualification_summary ??
       transcript.slice(-2).map((t) => `${t.role}: ${t.content}`).join(" · ").slice(0, 280),
     messages: transcript as unknown as never,
   };
 
   let finalLeadId: string | null = null;
-  if (args.leadId) {
-    const { data: existing } = await supabaseAdmin
-      .from("leads")
-      .select("company_id")
-      .eq("id", args.leadId)
-      .maybeSingle();
-    if (existing && existing.company_id !== args.companyId) {
-      console.warn("[widget] leadId belongs to different company — inserting new lead instead");
-      const ins = await supabaseAdmin.from("leads").insert(payload).select("id").maybeSingle();
-      finalLeadId = ins.data?.id ?? null;
-    } else {
-      await supabaseAdmin.from("leads").upsert({ id: args.leadId, ...payload });
-      finalLeadId = args.leadId;
-    }
+  if (args.leadId && existingLeadFound && !existingLeadSameCompany) {
+    console.warn("[widget] leadId belongs to different company — inserting new lead instead");
+    const ins = await supabaseAdmin.from("leads").insert(payload).select("id").maybeSingle();
+    finalLeadId = ins.data?.id ?? null;
+  } else if (args.leadId) {
+    await supabaseAdmin.from("leads").upsert({ id: args.leadId, ...payload });
+    finalLeadId = args.leadId;
   } else {
     const ins = await supabaseAdmin.from("leads").insert(payload).select("id").maybeSingle();
     finalLeadId = ins.data?.id ?? null;
@@ -368,7 +406,7 @@ async function persistLeadFromTranscript(args: {
 
   // ---- Auto-generate structured Lead-Summary once conversation is meaningful ----
   const userMsgCount = args.messages.filter((m) => m.role === "user").length;
-  const hasContact = Boolean(data.name || data.email || data.phone);
+  const hasContact = Boolean(merged.name || merged.email || merged.phone);
   if (finalLeadId && userMsgCount >= 3 && hasContact) {
     try {
       const key = process.env.ANTHROPIC_API_KEY;
