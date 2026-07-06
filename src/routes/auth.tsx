@@ -35,7 +35,7 @@ function AuthPage() {
           email,
           password,
           options: {
-            emailRedirectTo: window.location.origin,
+            emailRedirectTo: `${window.location.origin}/dashboard`,
             data: {
               company_name: companyName || "Mein Maklerbüro",
               full_name: fullName || null,
@@ -60,7 +60,7 @@ function AuthPage() {
     setBusy(true);
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: window.location.origin },
+      options: { redirectTo: `${window.location.origin}/dashboard` },
     });
     if (error) {
       toast.error(error.message || "Google-Anmeldung fehlgeschlagen");

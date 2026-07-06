@@ -35,19 +35,33 @@ function ResetPasswordPage() {
         const type = hashParams.get("type") || search.get("type");
         const code = search.get("code");
 
-        if (access_token && refresh_token && type === "recovery") {
+        // Supabase's client auto-detects these same URL params on init
+        // (detectSessionInUrl, default true). If it already established a
+        // session, skip manual processing — re-exchanging a PKCE `code` a
+        // second time would fail since codes are single-use.
+        const { data: existing } = await supabase.auth.getSession();
+        if (existing.session) {
+          if (cancelled) return;
+          setHasSession(true);
+        } else if (access_token && refresh_token && type === "recovery") {
           const { error } = await supabase.auth.setSession({ access_token, refresh_token });
           if (error) throw error;
           window.history.replaceState({}, "", window.location.pathname);
+          const { data } = await supabase.auth.getSession();
+          if (cancelled) return;
+          setHasSession(!!data.session);
         } else if (code) {
           const { error } = await supabase.auth.exchangeCodeForSession(code);
           if (error) throw error;
           window.history.replaceState({}, "", window.location.pathname);
+          const { data } = await supabase.auth.getSession();
+          if (cancelled) return;
+          setHasSession(!!data.session);
+        } else {
+          const { data } = await supabase.auth.getSession();
+          if (cancelled) return;
+          setHasSession(!!data.session);
         }
-
-        const { data } = await supabase.auth.getSession();
-        if (cancelled) return;
-        setHasSession(!!data.session);
       } catch (err) {
         if (!cancelled) toast.error(err instanceof Error ? err.message : "Recovery-Link ungültig");
       } finally {

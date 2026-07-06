@@ -19,7 +19,6 @@ function ForgotPasswordPage() {
     e.preventDefault();
     setBusy(true);
     try {
-      // TODO: Create a /reset-password page to handle the recovery link.
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/reset-password`,
       });
