@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { convertToModelMessages, streamText, type UIMessage } from "ai";
+import { convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, streamText, type UIMessage } from "ai";
 import { createAnthropicProvider } from "@/lib/ai-gateway.server";
 import { buildSystemPrompt } from "@/lib/chat-prompt";
 
@@ -14,6 +14,29 @@ const DEMO_COMPANY_ID = "00000000-0000-0000-0000-000000000000";
 const MAX_MESSAGES = 50;
 const MAX_CHARS_PER_MSG = 4000;
 const USER_DATA_MARKER_RE = /<<DATA>>|<<END>>/gi;
+
+// ---- Demo-Nutzungslimits (Kostenschutz) ----
+const DAILY_COMPANY_LIMIT = 25; // KI-Nachrichten pro company_id pro Tag (Demo)
+const SESSION_LIMIT = 8; // KI-Nachrichten pro Session (leadId)
+const CONTEXT_MESSAGE_LIMIT = 12; // max. Nachrichten-Historie, die an Claude geschickt wird
+const DAILY_LIMIT_TEXT =
+  "Danke für Ihre Anfrage. Für diese Demo ist das tägliche Gesprächslimit erreicht. Bitte hinterlassen Sie Ihre Kontaktdaten oder kontaktieren Sie das Immobilienbüro direkt.";
+const SESSION_LIMIT_TEXT =
+  "Danke, ich habe die wichtigsten Informationen aufgenommen. Für die Demo ist dieses Gespräch jetzt begrenzt. Das Immobilienbüro kann sich mit Ihnen in Verbindung setzen.";
+
+function fixedAssistantReply(text: string) {
+  const stream = createUIMessageStream({
+    execute: ({ writer }) => {
+      const id = crypto.randomUUID();
+      writer.write({ type: "start" });
+      writer.write({ type: "text-start", id });
+      writer.write({ type: "text-delta", id, delta: text });
+      writer.write({ type: "text-end", id });
+      writer.write({ type: "finish" });
+    },
+  });
+  return createUIMessageStreamResponse({ stream, headers: corsHeaders });
+}
 
 type Body = { messages?: UIMessage[]; companyId?: string; leadId?: string | null };
 
@@ -105,12 +128,70 @@ export const Route = createFileRoute("/api/public/widget/chat")({
             });
           }
 
-          // ---- Rate limit (anti-spam / anti credit-abuse) ----
           const ip =
             request.headers.get("cf-connecting-ip") ??
             request.headers.get("x-forwarded-for")?.split(",")[0].trim() ??
             "unknown";
           const bucketKey = leadId ?? `ip:${ip}`;
+
+          // ---- Demo-Nutzungslimits (Tageslimit pro Firma + Session-Limit) ----
+          const dayBucket = new Date().toISOString().slice(0, 10) + "T00:00:00.000Z";
+          const sessionBucketKey = `session:${bucketKey}`;
+
+          const [{ data: dailyRow }, { data: sessionRow }] = await Promise.all([
+            supabaseAdmin
+              .from("widget_throttle")
+              .select("count")
+              .eq("company_id", company.id)
+              .eq("bucket_key", "daily")
+              .eq("minute_bucket", dayBucket)
+              .maybeSingle(),
+            supabaseAdmin
+              .from("widget_throttle")
+              .select("count")
+              .eq("company_id", company.id)
+              .eq("bucket_key", sessionBucketKey)
+              .eq("minute_bucket", dayBucket)
+              .maybeSingle(),
+          ]);
+          const dailyCount = dailyRow?.count ?? 0;
+          const sessionCount = sessionRow?.count ?? 0;
+
+          if (dailyCount >= DAILY_COMPANY_LIMIT) {
+            await supabaseAdmin.from("system_events").insert({
+              kind: "success",
+              source: "widget.chat.limit_daily",
+              message: `Demo-Tageslimit erreicht (company ${company.id})`,
+              context: { companyId: company.id, leadId, count: dailyCount },
+            });
+            return fixedAssistantReply(DAILY_LIMIT_TEXT);
+          }
+          if (sessionCount >= SESSION_LIMIT) {
+            await supabaseAdmin.from("system_events").insert({
+              kind: "success",
+              source: "widget.chat.limit_session",
+              message: `Demo-Session-Limit erreicht (company ${company.id})`,
+              context: { companyId: company.id, leadId, count: sessionCount },
+            });
+            return fixedAssistantReply(SESSION_LIMIT_TEXT);
+          }
+
+          await Promise.all([
+            supabaseAdmin
+              .from("widget_throttle")
+              .upsert(
+                { company_id: company.id, bucket_key: "daily", minute_bucket: dayBucket, count: dailyCount + 1 },
+                { onConflict: "company_id,bucket_key,minute_bucket" },
+              ),
+            supabaseAdmin
+              .from("widget_throttle")
+              .upsert(
+                { company_id: company.id, bucket_key: sessionBucketKey, minute_bucket: dayBucket, count: sessionCount + 1 },
+                { onConflict: "company_id,bucket_key,minute_bucket" },
+              ),
+          ]);
+
+          // ---- Rate limit (anti-spam / anti credit-abuse) ----
           const minuteBucket = new Date(Math.floor(Date.now() / 60000) * 60000).toISOString();
           const PER_MINUTE_LIMIT = 20;
           const PER_COMPANY_LIMIT = 120;
@@ -150,10 +231,12 @@ export const Route = createFileRoute("/api/public/widget/chat")({
           const anthropic = createAnthropicProvider(key);
           const model = anthropic("claude-sonnet-5");
 
+          const modelMessages = messages.slice(-CONTEXT_MESSAGE_LIMIT);
+
           const result = streamText({
             model,
             system: buildSystemPrompt(company.name),
-            messages: await convertToModelMessages(messages as UIMessage[]),
+            messages: await convertToModelMessages(modelMessages as UIMessage[]),
             onError: (event) => {
               console.error("[widget] streamText error", event);
               const message = event instanceof Error ? event.message : JSON.stringify(event);
