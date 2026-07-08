@@ -58,6 +58,7 @@ function LeadDetailPage() {
             <ArrowLeft className="size-4" /> Alle Leads
           </button>
           <div className="flex items-center gap-2">
+            {/* TODO: Pro-Lead-Löschfunktion (DSGVO-Löschfristen, siehe src/lib/data-retention.ts) */}
             <button disabled={busy} onClick={() => markStatus("qualifiziert")} className="rounded-lg border border-border bg-card px-3 py-2 text-xs font-medium hover:bg-accent disabled:opacity-50">Als qualifiziert markieren</button>
             <button disabled={busy} onClick={() => markStatus("termin")} className="rounded-lg bg-gold text-gold-foreground px-3 py-2 text-xs font-medium hover:opacity-90 disabled:opacity-50 inline-flex items-center gap-1.5">
               <Calendar className="size-3.5" /> Termin vereinbart

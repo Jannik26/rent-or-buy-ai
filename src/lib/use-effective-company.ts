@@ -6,10 +6,10 @@ export type EffectiveCompany = { id: string; name: string; greeting: string };
 export const DEMO_COMPANY: EffectiveCompany = {
   id: "00000000-0000-0000-0000-000000000000",
   name: "EstateAI Demo Immobilien",
-  greeting: "Willkommen bei EstateAI. Wie kann ich Ihnen helfen?",
+  greeting: "Hallo! Ich bin Ihr persönlicher Immobilienberater. Möchten Sie verkaufen, kaufen, mieten oder den Wert einer Immobilie ermitteln?",
 };
 
-const DEFAULT_GREETING = "Willkommen bei EstateAI. Wie kann ich Ihnen helfen?";
+const DEFAULT_GREETING = "Hallo! Ich bin Ihr persönlicher Immobilienberater. Möchten Sie verkaufen, kaufen, mieten oder den Wert einer Immobilie ermitteln?";
 
 /**
  * Returns the currently authenticated user's own company (auto-creating one

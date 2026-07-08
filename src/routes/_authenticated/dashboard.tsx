@@ -163,7 +163,7 @@ function Dashboard() {
           {/* Stats */}
           <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <StatCard label="Neue Leads" value={stats.total} delta={stats.newWeek} deltaLabel="diese Woche" icon={Users} tone="primary" />
-            <StatCard label="Heiße Leads" value={stats.hot} icon={Flame} tone="hot" hint="Sofort kontaktieren" />
+            <StatCard label="Heiße Leads" value={stats.hot} icon={Flame} tone="hot" hint="KI empfiehlt Priorität" />
             <StatCard label="Termine" value={stats.termine} icon={Calendar} tone="gold" hint="Vereinbart" />
             <StatCard label="Conversion Rate" value={`${stats.conversion}%`} icon={TrendingUp} tone="success" progress={stats.conversion} />
           </div>
@@ -273,7 +273,7 @@ function LeadsTable({ leads }: { leads: Lead[] }) {
             <th className="text-left font-semibold px-4 py-3">Typ</th>
             <th className="text-left font-semibold px-4 py-3">Immobilie</th>
             <th className="text-left font-semibold px-4 py-3">Motivation</th>
-            <th className="text-left font-semibold px-4 py-3 w-[200px]">Lead Score</th>
+            <th className="text-left font-semibold px-4 py-3 w-[200px]">KI-Score</th>
             <th className="text-left font-semibold px-4 py-3">Status</th>
             <th className="text-left font-semibold px-4 py-3">Datum</th>
             <th className="px-4 py-3"></th>
@@ -343,7 +343,7 @@ function formatDate(iso: string) {
 export function ScoreBar({ score, num }: { score: "hot" | "warm" | "cold"; num: number }) {
   const cls = score === "hot" ? "bg-destructive" : score === "warm" ? "bg-warning" : "bg-info";
   return (
-    <div className="flex items-center gap-2.5 min-w-[160px]">
+    <div className="flex items-center gap-2.5 min-w-[160px]" title="KI-Einschätzung – bitte manuell prüfen">
       <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
         <div className={cn("h-full rounded-full transition-all", cls)} style={{ width: `${Math.max(4, Math.min(100, num))}%` }} />
       </div>
@@ -356,7 +356,10 @@ export function ScoreBar({ score, num }: { score: "hot" | "warm" | "cold"; num: 
 export function ScorePill({ score, num }: { score: "hot" | "warm" | "cold"; num: number }) {
   const cfg = SCORE_CONFIG[score];
   return (
-    <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold", cfg.badgeCls)}>
+    <span
+      title="KI-Einschätzung – bitte manuell prüfen"
+      className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold", cfg.badgeCls)}
+    >
       <span>{cfg.emoji}</span> {cfg.label.toUpperCase()} · {num}/100
     </span>
   );

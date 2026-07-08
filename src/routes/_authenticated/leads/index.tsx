@@ -77,7 +77,7 @@ function LeadsPage() {
                 <tr className="text-[11px] uppercase tracking-wider text-muted-foreground border-b border-border bg-muted/30">
                   <th className="text-left font-semibold px-6 py-3">Kunde</th>
                   <th className="text-left font-semibold px-4 py-3">Typ</th>
-                  <th className="text-left font-semibold px-4 py-3 w-[200px]">Score</th>
+                  <th className="text-left font-semibold px-4 py-3 w-[200px]">KI-Score</th>
                   <th className="text-left font-semibold px-4 py-3">Status</th>
                   <th className="px-4 py-3"></th>
                 </tr>

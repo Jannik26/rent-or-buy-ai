@@ -1,11 +1,12 @@
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Send, ShoppingBag, Tag, Scale, RotateCcw } from "lucide-react";
+import { Send, ShoppingBag, Tag, Scale, Key, RotateCcw } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { cn } from "@/lib/utils";
 
 const DATA_RE = /<<DATA>>[\s\S]*?<<END>>/g;
+const DATA_TAIL_RE = /<<DATA>>[\s\S]*$/; // unvollständiger Marker während des Streamings
 
 function getOrCreateLeadId(companyId: string) {
   if (typeof window === "undefined") return crypto.randomUUID();
@@ -23,12 +24,14 @@ function partsToText(parts: UIMessage["parts"]) {
     .map((p) => (p.type === "text" ? (p as { text: string }).text : ""))
     .join("")
     .replace(DATA_RE, "")
+    .replace(DATA_TAIL_RE, "")
     .trim();
 }
 
 const QUICK_INTENTS = [
   { id: "verkauf", label: "Ich möchte verkaufen", text: "Ich möchte eine Immobilie verkaufen.", icon: Tag },
   { id: "kauf", label: "Ich möchte kaufen", text: "Ich möchte eine Immobilie kaufen.", icon: ShoppingBag },
+  { id: "miete", label: "Ich möchte mieten", text: "Ich möchte eine Immobilie mieten.", icon: Key },
   { id: "bewertung", label: "Wert ermitteln", text: "Ich möchte den Wert meiner Immobilie erfahren.", icon: Scale },
 ] as const;
 
@@ -167,6 +170,10 @@ export function SetterChat({
           <RotateCcw className="size-4" />
         </button>
       </header>
+
+      <p className="px-5 py-1.5 text-[11px] leading-snug text-muted-foreground bg-muted/40 border-b border-border">
+        Ich bin ein digitaler Assistent dieses Immobilienbüros. Ihre Angaben werden zur Bearbeitung und Weiterleitung Ihrer Anfrage verarbeitet. Bitte keine besonders sensiblen Informationen eingeben.
+      </p>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-5 space-y-4 bg-muted/30">
         {messages.map((m) => {

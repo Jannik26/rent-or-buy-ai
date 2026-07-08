@@ -15,7 +15,7 @@ function WidgetPage() {
     (async () => {
       const { supabase } = await import("@/integrations/supabase/client");
       const { data } = await supabase.from("companies").select("name, greeting").eq("id", companyId).maybeSingle();
-      if (data) setCompany({ name: data.name, greeting: data.greeting ?? "Willkommen bei EstateAI. Wie kann ich Ihnen helfen?" });
+      if (data) setCompany({ name: data.name, greeting: data.greeting ?? "Hallo! Ich bin Ihr persönlicher Immobilienberater. Möchten Sie verkaufen, kaufen, mieten oder den Wert einer Immobilie ermitteln?" });
     })();
   }, [companyId]);
 

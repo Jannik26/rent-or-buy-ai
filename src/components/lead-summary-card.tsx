@@ -46,7 +46,10 @@ export function LeadSummaryCard({ lead, onUpdated }: { lead: LeadLike; onUpdated
         </div>
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-2">
-            <span className={cn("inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold", scoreCfg.badgeCls)}>
+            <span
+              title="KI-Einschätzung – bitte manuell prüfen"
+              className={cn("inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold", scoreCfg.badgeCls)}
+            >
               <span>{scoreCfg.emoji}</span> {scoreCfg.label}
             </span>
             <span className="font-display text-lg text-foreground tabular-nums">

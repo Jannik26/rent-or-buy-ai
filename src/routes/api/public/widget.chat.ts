@@ -236,8 +236,6 @@ type ExtractedData = {
   asking_price?: string;
   financing?: string;
   timeframe?: string;
-  income?: string;
-  household_size?: string;
   move_in_date?: string;
   _summary?: string;
   _next_action?: string;
@@ -298,9 +296,9 @@ const MERGE_FIELDS = [
   "asking_price",
   "financing",
   "timeframe",
-  "income",
-  "household_size",
   "move_in_date",
+  // income/household_size bewusst nicht erfasst (Datenminimierung, DSGVO) —
+  // Spalten existieren noch in der DB (Legacy), werden über diesen Pfad aber nie mehr befüllt.
 ] as const;
 
 type MergeField = (typeof MERGE_FIELDS)[number];
@@ -342,7 +340,7 @@ async function persistLeadFromTranscript(args: {
     const { data: existing } = await supabaseAdmin
       .from("leads")
       .select(
-        "name, email, phone, property_type, location, object_desc, motivation, ownership_status, usage_type, budget, asking_price, financing, timeframe, income, household_size, move_in_date, company_id, intent, status, ai_summary, next_action, qualification_summary",
+        "name, email, phone, property_type, location, object_desc, motivation, ownership_status, usage_type, budget, asking_price, financing, timeframe, move_in_date, company_id, intent, status, ai_summary, next_action, qualification_summary",
       )
       .eq("id", args.leadId)
       .maybeSingle();
