@@ -1,10 +1,10 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import {
-  ArrowRight, ArrowUpRight, Building2, Calendar, Check, Code2, Copy, ExternalLink,
+  ArrowRight, ArrowUpRight, Building2, Calendar, Check, Code2, Copy,
   Flame, Search, Sparkles, TrendingUp, Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -164,10 +164,10 @@ function Dashboard() {
 
           {/* Stats */}
           <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <StatCard label="Neue Leads" value={stats.total} delta={stats.newWeek} deltaLabel="diese Woche" icon={Users} tone="primary" />
-            <StatCard label="Heiße Leads" value={stats.hot} icon={Flame} tone="hot" hint="KI empfiehlt Priorität" />
-            <StatCard label="Termine" value={stats.termine} icon={Calendar} tone="gold" hint="Vereinbart" />
-            <StatCard label="Conversion Rate" value={`${stats.conversion}%`} icon={TrendingUp} tone="success" progress={stats.conversion} />
+            <StatCard label="Neue Leads" value={stats.total} delta={stats.newWeek} deltaLabel="diese Woche" icon={Users} tone="primary" to="/leads" search={{ filter: "new" }} />
+            <StatCard label="Heiße Leads" value={stats.hot} icon={Flame} tone="hot" hint="KI empfiehlt Priorität" to="/leads" search={{ filter: "hot" }} />
+            <StatCard label="Termine" value={stats.termine} icon={Calendar} tone="gold" hint="Vereinbart" to="/appointments" />
+            <StatCard label="Conversion Rate" value={`${stats.conversion}%`} icon={TrendingUp} tone="success" progress={stats.conversion} to="/analytics" />
           </div>
 
           {/* Leads */}
@@ -223,10 +223,11 @@ function TrialBanner({ company }: { company: Company }) {
 }
 
 function StatCard({
-  label, value, delta, deltaLabel, icon: Icon, tone, hint, progress,
+  label, value, delta, deltaLabel, icon: Icon, tone, hint, progress, to, search,
 }: {
   label: string; value: number | string; delta?: number; deltaLabel?: string;
   icon: typeof Flame; tone: "primary" | "hot" | "gold" | "success"; hint?: string; progress?: number;
+  to: "/leads" | "/appointments" | "/analytics"; search?: Record<string, string>;
 }) {
   const toneClass = {
     primary: "bg-primary/10 text-primary",
@@ -238,7 +239,11 @@ function StatCard({
     primary: "bg-primary", hot: "bg-destructive", gold: "bg-gold", success: "bg-success",
   }[tone];
   return (
-    <div className="group rounded-2xl border border-border bg-card p-5 shadow-soft hover:shadow-elegant transition">
+    <Link
+      to={to}
+      search={search}
+      className="group block rounded-2xl border border-border bg-card p-5 shadow-soft hover:shadow-elegant transition focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
       <div className="flex items-start justify-between">
         <div className="min-w-0">
           <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{label}</div>
@@ -264,7 +269,7 @@ function StatCard({
           <div className="text-xs text-muted-foreground">{hint}</div>
         ) : null}
       </div>
-    </div>
+    </Link>
   );
 }
 
@@ -297,7 +302,6 @@ function LeadsTable({ leads }: { leads: Lead[] }) {
             <th className="text-left font-semibold px-4 py-3 w-[200px]">KI-Score</th>
             <th className="text-left font-semibold px-4 py-3">Status</th>
             <th className="text-left font-semibold px-4 py-3">Datum</th>
-            <th className="px-4 py-3"></th>
           </tr>
         </thead>
         <tbody>
@@ -311,9 +315,23 @@ function LeadsTable({ leads }: { leads: Lead[] }) {
 }
 
 function LeadRow({ lead: l }: { lead: Lead }) {
+  const navigate = useNavigate();
   const initials = (l.name ?? "??").split(" ").slice(0, 2).map((s) => s[0]?.toUpperCase() ?? "").join("") || "?";
+  const open = () => navigate({ to: "/leads/$leadId", params: { leadId: l.id } });
   return (
-    <tr className="border-b border-border last:border-0 hover:bg-muted/30 transition group">
+    <tr
+      className="border-b border-border last:border-0 hover:bg-muted/30 transition group cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+      role="link"
+      tabIndex={0}
+      aria-label={`Lead ${l.name ?? "Anonymer Besucher"} öffnen`}
+      onClick={open}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          open();
+        }
+      }}
+    >
       <td className="px-6 py-4">
         <div className="flex items-center gap-3 min-w-0">
           <div className="size-9 rounded-full bg-gradient-navy text-primary-foreground grid place-items-center text-xs font-semibold shrink-0">
@@ -339,14 +357,6 @@ function LeadRow({ lead: l }: { lead: Lead }) {
       <td className="px-4 py-4"><StatusBadge status={l.status} score={l.score} /></td>
       <td className="px-4 py-4 text-xs text-muted-foreground whitespace-nowrap">
         {formatDate(l.created_at)}
-      </td>
-      <td className="px-4 py-4 text-right">
-        <Link
-          to="/leads/$leadId" params={{ leadId: l.id }}
-          className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground opacity-0 group-hover:opacity-100 transition"
-        >
-          Öffnen <ExternalLink className="size-3" />
-        </Link>
       </td>
     </tr>
   );

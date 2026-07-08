@@ -1,8 +1,8 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { Search, ExternalLink, Users } from "lucide-react";
+import { Search, Users, X } from "lucide-react";
 import type { Lead } from "../dashboard";
 import { IntentChip, ScoreBar, StatusBadge } from "../dashboard";
 
@@ -12,7 +12,9 @@ export const Route = createFileRoute("/_authenticated/leads/")({
 });
 
 function LeadsPage() {
+  const navigate = useNavigate();
   const [search, setSearch] = useState("");
+  const filter = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("filter") : null;
 
   const companyQuery = useQuery({
     queryKey: ["company"],
@@ -38,14 +40,23 @@ function LeadsPage() {
   const leads = leadsQuery.data ?? [];
 
   const filtered = useMemo(() => {
-    if (!search.trim()) return leads;
+    let result = leads;
+    if (filter === "new") {
+      const now = Date.now();
+      result = result.filter((l) => now - new Date(l.created_at).getTime() < 7 * 864e5);
+    } else if (filter === "hot") {
+      result = result.filter((l) => l.score === "hot");
+    }
+    if (!search.trim()) return result;
     const q = search.toLowerCase();
-    return leads.filter((l) =>
+    return result.filter((l) =>
       (l.name ?? "").toLowerCase().includes(q) ||
       (l.email ?? "").toLowerCase().includes(q) ||
       (l.location ?? "").toLowerCase().includes(q),
     );
-  }, [leads, search]);
+  }, [leads, search, filter]);
+
+  const filterLabel = filter === "new" ? "Neue Leads (letzte 7 Tage)" : filter === "hot" ? "Heiße Leads" : null;
 
   return (
     <div className="p-4 sm:p-8 max-w-[1600px] mx-auto w-full">
@@ -61,6 +72,15 @@ function LeadsPage() {
           className="bg-transparent text-sm outline-none flex-1 placeholder:text-muted-foreground"
         />
       </div>
+
+      {filterLabel && (
+        <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-border bg-muted/50 px-3 py-1.5 text-xs font-medium text-muted-foreground">
+          Filter: {filterLabel}
+          <Link to="/leads" className="inline-flex items-center gap-0.5 hover:text-foreground">
+            <X className="size-3" /> Zurücksetzen
+          </Link>
+        </div>
+      )}
 
       <section className="mt-6 rounded-2xl border border-border bg-card shadow-soft overflow-hidden">
         {filtered.length === 0 ? (
@@ -79,12 +99,24 @@ function LeadsPage() {
                   <th className="text-left font-semibold px-4 py-3">Typ</th>
                   <th className="text-left font-semibold px-4 py-3 w-[200px]">KI-Score</th>
                   <th className="text-left font-semibold px-4 py-3">Status</th>
-                  <th className="px-4 py-3"></th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((l) => (
-                  <tr key={l.id} className="border-b border-border last:border-0 hover:bg-muted/30 transition">
+                  <tr
+                    key={l.id}
+                    className="border-b border-border last:border-0 hover:bg-muted/30 transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+                    role="link"
+                    tabIndex={0}
+                    aria-label={`Lead ${l.name ?? "Anonymer Besucher"} öffnen`}
+                    onClick={() => navigate({ to: "/leads/$leadId", params: { leadId: l.id } })}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        navigate({ to: "/leads/$leadId", params: { leadId: l.id } });
+                      }
+                    }}
+                  >
                     <td className="px-6 py-4">
                       <div className="font-medium">{l.name ?? "Anonymer Besucher"}</div>
                       <div className="text-xs text-muted-foreground">{l.email ?? l.phone ?? "—"}</div>
@@ -92,15 +124,6 @@ function LeadsPage() {
                     <td className="px-4 py-4"><IntentChip intent={l.intent} /></td>
                     <td className="px-4 py-4"><ScoreBar score={l.score} num={l.score_numeric} /></td>
                     <td className="px-4 py-4"><StatusBadge status={l.status} score={l.score} /></td>
-                    <td className="px-4 py-4 text-right">
-                      <Link
-                        to="/leads/$leadId"
-                        params={{ leadId: l.id }}
-                        className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
-                      >
-                        Öffnen <ExternalLink className="size-3" />
-                      </Link>
-                    </td>
                   </tr>
                 ))}
               </tbody>
