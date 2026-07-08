@@ -90,7 +90,8 @@ export function SetterChat({
       let friendly = "Es ist ein Fehler aufgetreten. Bitte versuchen Sie es erneut.";
       try {
         const parsed = JSON.parse(raw);
-        if (parsed?.error) friendly = parsed.error;
+        if (parsed?.message) friendly = parsed.message;
+        else if (parsed?.error) friendly = parsed.error;
       } catch {
         if (raw) friendly = raw;
       }
@@ -98,7 +99,6 @@ export function SetterChat({
     },
     onFinish: ({ message }) => {
       console.log("[EstateChat] message finished", { id: message.id, role: message.role });
-      setErrorMsg(null);
     },
   });
 

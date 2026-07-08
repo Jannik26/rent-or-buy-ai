@@ -41,7 +41,7 @@ export type Lead = {
   created_at: string;
 };
 
-type Company = { id: string; name: string; greeting: string };
+type Company = { id: string; name: string; greeting: string; subscription_status: string | null; demo_expires_at: string | null };
 type Profile = { full_name: string | null; email: string | null; company: string | null };
 
 export const Route = createFileRoute("/_authenticated/dashboard")({
@@ -59,7 +59,7 @@ function Dashboard() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("not authed");
       const { data, error } = await supabase
-        .from("companies").select("id, name, greeting").eq("owner_id", user.id).maybeSingle();
+        .from("companies").select("id, name, greeting, subscription_status, demo_expires_at").eq("owner_id", user.id).maybeSingle();
       if (error) throw error;
       if (data) return data as Company;
       // Safety net: auto-create a company for authenticated users that don't have one yet.
@@ -70,7 +70,7 @@ function Dashboard() {
       const { data: created, error: insErr } = await supabase
         .from("companies")
         .insert({ owner_id: user.id, name: fallbackName })
-        .select("id, name, greeting")
+        .select("id, name, greeting, subscription_status, demo_expires_at")
         .single();
       if (insErr) throw insErr;
       return created as Company;
@@ -160,6 +160,8 @@ function Dashboard() {
             </div>
           </div>
 
+          {company && <TrialBanner company={company} />}
+
           {/* Stats */}
           <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <StatCard label="Neue Leads" value={stats.total} delta={stats.newWeek} deltaLabel="diese Woche" icon={Users} tone="primary" />
@@ -200,6 +202,25 @@ function Dashboard() {
 
 
 
+
+function TrialBanner({ company }: { company: Company }) {
+  if (company.subscription_status !== "trial") return null;
+  const expires = company.demo_expires_at ? new Date(company.demo_expires_at) : null;
+  const daysLeft = expires ? Math.ceil((expires.getTime() - Date.now()) / 86400000) : null;
+  const expired = daysLeft === null || daysLeft <= 0;
+  return (
+    <div
+      className={cn(
+        "mt-4 rounded-xl border px-4 py-2.5 text-sm",
+        expired ? "border-destructive/30 bg-destructive/10 text-destructive" : "border-gold/30 bg-gold/10 text-gold-foreground",
+      )}
+    >
+      {expired
+        ? "Demo abgelaufen."
+        : `Demo läuft bis ${expires!.toLocaleDateString("de-DE")} · noch ${daysLeft} Tag${daysLeft === 1 ? "" : "e"}.`}
+    </div>
+  );
+}
 
 function StatCard({
   label, value, delta, deltaLabel, icon: Icon, tone, hint, progress,

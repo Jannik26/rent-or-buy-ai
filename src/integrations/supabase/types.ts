@@ -17,29 +17,38 @@ export type Database = {
       companies: {
         Row: {
           created_at: string
+          demo_expires_at: string | null
+          demo_started_at: string | null
           greeting: string | null
           id: string
           name: string
           owner_id: string | null
           primary_color: string | null
+          subscription_status: string | null
           updated_at: string
         }
         Insert: {
           created_at?: string
+          demo_expires_at?: string | null
+          demo_started_at?: string | null
           greeting?: string | null
           id?: string
           name: string
           owner_id?: string | null
           primary_color?: string | null
+          subscription_status?: string | null
           updated_at?: string
         }
         Update: {
           created_at?: string
+          demo_expires_at?: string | null
+          demo_started_at?: string | null
           greeting?: string | null
           id?: string
           name?: string
           owner_id?: string | null
           primary_color?: string | null
+          subscription_status?: string | null
           updated_at?: string
         }
         Relationships: []

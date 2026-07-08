@@ -24,6 +24,34 @@ const DAILY_LIMIT_TEXT =
 const SESSION_LIMIT_TEXT =
   "Danke, ich habe die wichtigsten Informationen aufgenommen. Für die Demo ist dieses Gespräch jetzt begrenzt. Das Immobilienbüro kann sich mit Ihnen in Verbindung setzen.";
 
+// ---- 14-Tage-Demo / Abo-Status ----
+type CompanyAccess = { id: string; subscription_status: string | null; demo_expires_at: string | null };
+type AccessResult = { allowed: true } | { allowed: false; code: "DEMO_EXPIRED" | "ACCOUNT_INACTIVE"; message: string };
+
+function isCompanyAllowedToUseWidget(company: CompanyAccess): AccessResult {
+  const status = company.subscription_status;
+  if (status === null || status === undefined || status === "active") {
+    return { allowed: true };
+  }
+  if (status === "trial") {
+    const expires = company.demo_expires_at ? new Date(company.demo_expires_at) : null;
+    if (expires && expires.getTime() > Date.now()) {
+      return { allowed: true };
+    }
+    return {
+      allowed: false,
+      code: "DEMO_EXPIRED",
+      message: "Die 14-tägige EstateAI-Demo ist abgelaufen. Bitte kontaktieren Sie den Anbieter.",
+    };
+  }
+  // "expired" | "paused" | "cancelled" | jeder unbekannte Wert
+  return {
+    allowed: false,
+    code: "ACCOUNT_INACTIVE",
+    message: "Dieses EstateAI-Widget ist aktuell nicht aktiv.",
+  };
+}
+
 function fixedAssistantReply(text: string) {
   const stream = createUIMessageStream({
     execute: ({ writer }) => {
@@ -117,13 +145,27 @@ export const Route = createFileRoute("/api/public/widget/chat")({
 
           const { data: company } = await supabaseAdmin
             .from("companies")
-            .select("id, name")
+            .select("id, name, subscription_status, demo_expires_at")
             .eq("id", companyId)
             .maybeSingle();
 
           if (!company) {
             return new Response(JSON.stringify({ error: "Unbekanntes Unternehmen." }), {
               status: 404,
+              headers: { ...corsHeaders, "content-type": "application/json" },
+            });
+          }
+
+          const access = isCompanyAllowedToUseWidget(company);
+          if (!access.allowed) {
+            await supabaseAdmin.from("system_events").insert({
+              kind: "error",
+              source: access.code === "DEMO_EXPIRED" ? "widget.chat.demo_expired" : "widget.chat.account_inactive",
+              message: access.message,
+              context: { companyId: company.id, subscriptionStatus: company.subscription_status },
+            });
+            return new Response(JSON.stringify({ error: access.code, message: access.message }), {
+              status: 403,
               headers: { ...corsHeaders, "content-type": "application/json" },
             });
           }
