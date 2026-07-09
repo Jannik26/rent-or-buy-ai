@@ -1,11 +1,12 @@
+import { useState } from "react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { LayoutDashboard, Users, MessageSquare, Calendar, BarChart3, Settings, LogOut } from "lucide-react";
+import { LayoutDashboard, Users, MessageSquare, Calendar, BarChart3, Settings, LogOut, Menu, X } from "lucide-react";
 import logo from "@/assets/estateai-logo.png";
 import { cn } from "@/lib/utils";
 
-const NAV = [
+export const NAV = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/leads", label: "Leads", icon: Users },
   { to: "/conversations", label: "Conversations", icon: MessageSquare },
@@ -92,5 +93,90 @@ export function AppSidebar() {
         </button>
       </div>
     </aside>
+  );
+}
+
+export function MobileNav() {
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const [open, setOpen] = useState(false);
+
+  const profileQuery = useQuery({
+    queryKey: ["sidebar-profile"],
+    queryFn: async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return null;
+      const { data } = await supabase
+        .from("profiles").select("full_name, email, company").eq("id", user.id).maybeSingle();
+      return data ?? { full_name: null, email: user.email, company: null };
+    },
+  });
+  const profile = profileQuery.data;
+
+  async function signOut() {
+    setOpen(false);
+    await qc.cancelQueries();
+    qc.clear();
+    await supabase.auth.signOut();
+    navigate({ to: "/auth", replace: true });
+  }
+
+  return (
+    <>
+      <header className="lg:hidden h-14 bg-card border-b border-border flex items-center justify-between px-4 sticky top-0 z-20">
+        <Link to="/dashboard" className="flex items-center gap-2" onClick={() => setOpen(false)}>
+          <img src={logo} alt="" className="size-7" width={28} height={28} />
+          <span className="font-display text-base">EstateAI</span>
+        </Link>
+        <button
+          onClick={() => setOpen((v) => !v)}
+          aria-label={open ? "Menü schließen" : "Menü öffnen"}
+          aria-expanded={open}
+          className="size-9 grid place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground transition"
+        >
+          {open ? <X className="size-5" /> : <Menu className="size-5" />}
+        </button>
+      </header>
+
+      {open && (
+        <>
+          <div className="lg:hidden fixed inset-0 top-14 z-10 bg-black/20" onClick={() => setOpen(false)} />
+          <div className="lg:hidden fixed inset-x-0 top-14 z-20 bg-card border-b border-border shadow-elegant">
+            <nav className="p-3 space-y-0.5 text-sm">
+              {NAV.map((item) => {
+                const active = pathname === item.to || (item.to !== "/dashboard" && pathname.startsWith(item.to));
+                const Icon = item.icon;
+                return (
+                  <Link
+                    key={item.to}
+                    to={item.to}
+                    onClick={() => setOpen(false)}
+                    className={cn(
+                      "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition text-sm",
+                      active ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                    )}
+                  >
+                    <Icon className="size-4 shrink-0" />
+                    <span className="flex-1 text-left truncate">{item.label}</span>
+                  </Link>
+                );
+              })}
+            </nav>
+            <div className="px-3 pb-3 pt-2 border-t border-border">
+              <div className="flex items-center gap-3 px-3 py-2 text-sm text-muted-foreground truncate">
+                {profile?.full_name ?? "Makler"} {profile?.company ? `· ${profile.company}` : ""}
+              </div>
+              <button
+                onClick={signOut}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-sm text-muted-foreground hover:bg-muted hover:text-foreground transition"
+              >
+                <LogOut className="size-4" /> Logout
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+    </>
   );
 }

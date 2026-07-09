@@ -74,7 +74,7 @@ function LeadsPage() {
       </div>
 
       {filterLabel && (
-        <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-border bg-muted/50 px-3 py-1.5 text-xs font-medium text-muted-foreground">
+        <div className="mt-3 inline-flex flex-wrap items-center gap-x-2 gap-y-1 max-w-full rounded-full border border-border bg-muted/50 px-3 py-1.5 text-xs font-medium text-muted-foreground">
           Filter: {filterLabel}
           <Link to="/leads" className="inline-flex items-center gap-0.5 hover:text-foreground">
             <X className="size-3" /> Zurücksetzen

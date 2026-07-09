@@ -39,6 +39,7 @@ export type Lead = {
   summary_generated_at: string | null;
   messages: { role: string; content: string }[];
   created_at: string;
+  updated_at: string;
 };
 
 type Company = { id: string; name: string; greeting: string; subscription_status: string | null; demo_expires_at: string | null };
@@ -362,7 +363,7 @@ function LeadRow({ lead: l }: { lead: Lead }) {
   );
 }
 
-function formatDate(iso: string) {
+export function formatDate(iso: string) {
   const d = new Date(iso);
   const days = Math.floor((Date.now() - d.getTime()) / 864e5);
   if (days === 0) return "Heute";
