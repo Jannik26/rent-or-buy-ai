@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -17,6 +17,7 @@ export const Route = createFileRoute("/_authenticated/leads/$leadId")({
 function LeadDetailPage() {
   const { leadId } = Route.useParams();
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const [busy, setBusy] = useState(false);
 
   const q = useQuery({
@@ -40,15 +41,32 @@ function LeadDetailPage() {
     );
   }
 
-  async function markStatus(status: string) {
+  async function updateStatus(status: string) {
     setBusy(true);
     const { error } = await supabase.from("leads").update({ status }).eq("id", leadId);
     setBusy(false);
-    if (error) toast.error(error.message);
-    else { toast.success("Status aktualisiert"); q.refetch(); }
+    if (error) { toast.error(error.message); return false; }
+    await q.refetch();
+    qc.invalidateQueries({ queryKey: ["leads"] });
+    return true;
   }
 
-  
+  async function markStatus(status: string) {
+    if (await updateStatus(status)) toast.success("Status aktualisiert");
+  }
+
+  const currentStatus = lead.status;
+  const isTermin = currentStatus === "termin";
+
+  async function toggleTermin() {
+    const next = isTermin ? "neu" : "termin";
+    const previous = currentStatus;
+    if (await updateStatus(next)) {
+      toast.success(next === "termin" ? "Termin vereinbart" : "Termin zurückgenommen", {
+        action: { label: "Rückgängig", onClick: () => updateStatus(previous) },
+      });
+    }
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -60,8 +78,18 @@ function LeadDetailPage() {
           <div className="flex items-center gap-2">
             {/* TODO: Pro-Lead-Löschfunktion (DSGVO-Löschfristen, siehe src/lib/data-retention.ts) */}
             <button disabled={busy} onClick={() => markStatus("qualifiziert")} className="rounded-lg border border-border bg-card px-3 py-2 text-xs font-medium hover:bg-accent disabled:opacity-50">Als qualifiziert markieren</button>
-            <button disabled={busy} onClick={() => markStatus("termin")} className="rounded-lg bg-gold text-gold-foreground px-3 py-2 text-xs font-medium hover:opacity-90 disabled:opacity-50 inline-flex items-center gap-1.5">
-              <Calendar className="size-3.5" /> Termin vereinbart
+            <button
+              disabled={busy}
+              onClick={toggleTermin}
+              className={cn(
+                "rounded-lg px-3 py-2 text-xs font-medium disabled:opacity-50 inline-flex items-center gap-1.5 transition",
+                isTermin
+                  ? "border border-border bg-card hover:bg-accent text-muted-foreground"
+                  : "bg-gold text-gold-foreground hover:opacity-90",
+              )}
+            >
+              <Calendar className="size-3.5" />
+              {isTermin ? "Termin zurücknehmen" : "Termin vereinbart"}
             </button>
           </div>
         </div>
