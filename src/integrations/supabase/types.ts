@@ -24,6 +24,7 @@ export type Database = {
           name: string
           owner_id: string | null
           primary_color: string | null
+          response_time: string
           subscription_status: string | null
           updated_at: string
         }
@@ -36,6 +37,7 @@ export type Database = {
           name: string
           owner_id?: string | null
           primary_color?: string | null
+          response_time?: string
           subscription_status?: string | null
           updated_at?: string
         }
@@ -48,6 +50,7 @@ export type Database = {
           name?: string
           owner_id?: string | null
           primary_color?: string | null
+          response_time?: string
           subscription_status?: string | null
           updated_at?: string
         }

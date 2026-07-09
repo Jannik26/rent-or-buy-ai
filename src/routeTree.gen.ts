@@ -11,8 +11,10 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
+import { Route as ImpressumRouteImport } from './routes/impressum'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as DemoRouteImport } from './routes/demo'
+import { Route as DatenschutzRouteImport } from './routes/datenschutz'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as AuthenticatedRouteRouteImport } from './routes/_authenticated/route'
 import { Route as IndexRouteImport } from './routes/index'
@@ -37,6 +39,11 @@ const ResetPasswordRoute = ResetPasswordRouteImport.update({
   path: '/reset-password',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ImpressumRoute = ImpressumRouteImport.update({
+  id: '/impressum',
+  path: '/impressum',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
   id: '/forgot-password',
   path: '/forgot-password',
@@ -45,6 +52,11 @@ const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
 const DemoRoute = DemoRouteImport.update({
   id: '/demo',
   path: '/demo',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DatenschutzRoute = DatenschutzRouteImport.update({
+  id: '/datenschutz',
+  path: '/datenschutz',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuthRoute = AuthRouteImport.update({
@@ -118,8 +130,10 @@ const ApiPublicWidgetChatRoute = ApiPublicWidgetChatRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/datenschutz': typeof DatenschutzRoute
   '/demo': typeof DemoRoute
   '/forgot-password': typeof ForgotPasswordRoute
+  '/impressum': typeof ImpressumRoute
   '/reset-password': typeof ResetPasswordRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/analytics': typeof AuthenticatedAnalyticsRoute
@@ -136,8 +150,10 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/auth': typeof AuthRoute
+  '/datenschutz': typeof DatenschutzRoute
   '/demo': typeof DemoRoute
   '/forgot-password': typeof ForgotPasswordRoute
+  '/impressum': typeof ImpressumRoute
   '/reset-password': typeof ResetPasswordRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/analytics': typeof AuthenticatedAnalyticsRoute
@@ -156,8 +172,10 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteRouteWithChildren
   '/auth': typeof AuthRoute
+  '/datenschutz': typeof DatenschutzRoute
   '/demo': typeof DemoRoute
   '/forgot-password': typeof ForgotPasswordRoute
+  '/impressum': typeof ImpressumRoute
   '/reset-password': typeof ResetPasswordRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/_authenticated/analytics': typeof AuthenticatedAnalyticsRoute
@@ -176,8 +194,10 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/auth'
+    | '/datenschutz'
     | '/demo'
     | '/forgot-password'
+    | '/impressum'
     | '/reset-password'
     | '/sitemap.xml'
     | '/analytics'
@@ -194,8 +214,10 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/auth'
+    | '/datenschutz'
     | '/demo'
     | '/forgot-password'
+    | '/impressum'
     | '/reset-password'
     | '/sitemap.xml'
     | '/analytics'
@@ -213,8 +235,10 @@ export interface FileRouteTypes {
     | '/'
     | '/_authenticated'
     | '/auth'
+    | '/datenschutz'
     | '/demo'
     | '/forgot-password'
+    | '/impressum'
     | '/reset-password'
     | '/sitemap.xml'
     | '/_authenticated/analytics'
@@ -233,8 +257,10 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRouteRoute: typeof AuthenticatedRouteRouteWithChildren
   AuthRoute: typeof AuthRoute
+  DatenschutzRoute: typeof DatenschutzRoute
   DemoRoute: typeof DemoRoute
   ForgotPasswordRoute: typeof ForgotPasswordRoute
+  ImpressumRoute: typeof ImpressumRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   WidgetCompanyIdRoute: typeof WidgetCompanyIdRoute
@@ -257,6 +283,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ResetPasswordRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/impressum': {
+      id: '/impressum'
+      path: '/impressum'
+      fullPath: '/impressum'
+      preLoaderRoute: typeof ImpressumRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/forgot-password': {
       id: '/forgot-password'
       path: '/forgot-password'
@@ -269,6 +302,13 @@ declare module '@tanstack/react-router' {
       path: '/demo'
       fullPath: '/demo'
       preLoaderRoute: typeof DemoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/datenschutz': {
+      id: '/datenschutz'
+      path: '/datenschutz'
+      fullPath: '/datenschutz'
+      preLoaderRoute: typeof DatenschutzRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth': {
@@ -394,8 +434,10 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRouteRoute: AuthenticatedRouteRouteWithChildren,
   AuthRoute: AuthRoute,
+  DatenschutzRoute: DatenschutzRoute,
   DemoRoute: DemoRoute,
   ForgotPasswordRoute: ForgotPasswordRoute,
+  ImpressumRoute: ImpressumRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   WidgetCompanyIdRoute: WidgetCompanyIdRoute,

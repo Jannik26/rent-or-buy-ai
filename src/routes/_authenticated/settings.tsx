@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { DEFAULT_RESPONSE_TIME, RESPONSE_TIME_OPTIONS, type ResponseTimeValue } from "@/lib/response-time";
 
 export const Route = createFileRoute("/_authenticated/settings")({
   head: () => ({ meta: [{ title: "Settings – EstateAI" }] }),
@@ -16,7 +17,7 @@ function SettingsPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return null;
       const { data } = await supabase
-        .from("companies").select("id, name, greeting").eq("owner_id", user.id).maybeSingle();
+        .from("companies").select("id, name, greeting, response_time").eq("owner_id", user.id).maybeSingle();
       return data;
     },
   });
@@ -24,12 +25,14 @@ function SettingsPage() {
 
   const [name, setName] = useState("");
   const [greeting, setGreeting] = useState("");
+  const [responseTime, setResponseTime] = useState<ResponseTimeValue>(DEFAULT_RESPONSE_TIME);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (company) {
       setName(company.name);
       setGreeting(company.greeting ?? "");
+      setResponseTime((company.response_time as ResponseTimeValue) ?? DEFAULT_RESPONSE_TIME);
     }
   }, [company]);
 
@@ -37,7 +40,10 @@ function SettingsPage() {
     e.preventDefault();
     if (!company) return;
     setBusy(true);
-    const { error } = await supabase.from("companies").update({ name, greeting }).eq("id", company.id);
+    const { error } = await supabase
+      .from("companies")
+      .update({ name, greeting, response_time: responseTime })
+      .eq("id", company.id);
     setBusy(false);
     if (error) toast.error(error.message);
     else {
@@ -67,6 +73,24 @@ function SettingsPage() {
             rows={3}
             className="mt-1.5 w-full rounded-xl border border-input bg-background px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-ring resize-none"
           />
+        </div>
+        <div>
+          <label className="text-sm font-medium">Rückmeldezeitraum im Chat</label>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Dieser Zeitraum wird Besuchern im Chat genannt, z. B. „Ein Makler meldet sich bei Ihnen innerhalb von 24 Stunden."
+          </p>
+          <select
+            value={responseTime}
+            onChange={(e) => setResponseTime(e.target.value as ResponseTimeValue)}
+            className="mt-1.5 w-full rounded-xl border border-input bg-background px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+          >
+            {RESPONSE_TIME_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+          <p className="mt-1.5 text-xs text-muted-foreground">
+            Aktuell aktiv: <span className="font-medium text-foreground">{RESPONSE_TIME_OPTIONS.find((o) => o.value === responseTime)?.label}</span>
+          </p>
         </div>
         <button
           type="submit"

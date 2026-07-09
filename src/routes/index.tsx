@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Building2, MessageCircle, Sparkles, Zap, ShieldCheck, ArrowRight, CheckCircle2, Clock, Target, BarChart3 } from "lucide-react";
 import { FloatingWidget } from "@/components/floating-widget";
+import { Footer } from "@/components/footer";
 import { useEffectiveCompany } from "@/lib/use-effective-company";
 import logo from "@/assets/estateai-logo.png";
 import hero from "@/assets/hero-interior.jpg";
@@ -221,19 +222,7 @@ function Landing() {
         </div>
       </section>
 
-      <footer className="border-t border-border py-10">
-        <div className="mx-auto max-w-7xl px-6 flex flex-wrap items-center justify-between gap-4 text-sm text-muted-foreground">
-          <div className="flex items-center gap-2">
-            <img src={logo} alt="" className="size-6" width={24} height={24} />
-            <span>© {new Date().getFullYear()} EstateAI – Mehr aus Immobilien-Leads machen.</span>
-          </div>
-          <div className="flex gap-6">
-            <a href="#" className="hover:text-foreground">Datenschutz</a>
-            <a href="#" className="hover:text-foreground">Impressum</a>
-            <a href="#kontakt" className="hover:text-foreground">Kontakt</a>
-          </div>
-        </div>
-      </footer>
+      <Footer kontaktHref="#kontakt" />
 
       {company && (
         <FloatingWidget companyId={company.id} companyName={company.name} greeting={company.greeting} />

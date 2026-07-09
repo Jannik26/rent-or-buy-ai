@@ -2,6 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, streamText, type UIMessage } from "ai";
 import { createAnthropicProvider } from "@/lib/ai-gateway.server";
 import { buildSystemPrompt } from "@/lib/chat-prompt";
+import { responseTimePhrase } from "@/lib/response-time";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -145,7 +146,7 @@ export const Route = createFileRoute("/api/public/widget/chat")({
 
           const { data: company } = await supabaseAdmin
             .from("companies")
-            .select("id, name, subscription_status, demo_expires_at")
+            .select("id, name, subscription_status, demo_expires_at, response_time")
             .eq("id", companyId)
             .maybeSingle();
 
@@ -277,7 +278,7 @@ export const Route = createFileRoute("/api/public/widget/chat")({
 
           const result = streamText({
             model,
-            system: buildSystemPrompt(company.name),
+            system: buildSystemPrompt(company.name, responseTimePhrase(company.response_time)),
             messages: await convertToModelMessages(modelMessages as UIMessage[]),
             onError: (event) => {
               console.error("[widget] streamText error", event);

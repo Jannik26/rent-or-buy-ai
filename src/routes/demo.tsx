@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import { SetterChat } from "@/components/setter-chat";
+import { Footer } from "@/components/footer";
 import { useEffectiveCompany, DEMO_COMPANY } from "@/lib/use-effective-company";
 import logo from "@/assets/estateai-logo.png";
 
@@ -38,6 +39,7 @@ function DemoPage() {
           <SetterChat companyId={company.id} companyName={company.name} greeting={company.greeting} variant="panel" />
         </div>
       </div>
+      <Footer />
     </div>
   );
 }

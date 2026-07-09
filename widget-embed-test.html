@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Müller & Partner Immobilien</title>
+<style>
+  :root {
+    --navy: #0B1F3A;
+    --gold: #B8985A;
+    --bg: #F7F6F3;
+    --text: #1C1C1C;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Georgia", "Times New Roman", serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+  }
+  header {
+    background: var(--navy);
+    color: #fff;
+    padding: 24px 48px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  header .logo {
+    font-size: 1.4rem;
+    letter-spacing: 1px;
+    font-weight: bold;
+  }
+  header .logo span { color: var(--gold); }
+  nav a {
+    color: #fff;
+    text-decoration: none;
+    margin-left: 32px;
+    font-size: 0.95rem;
+  }
+  .hero {
+    padding: 80px 48px;
+    text-align: center;
+    background: linear-gradient(180deg, var(--navy) 0%, #12294d 100%);
+    color: #fff;
+  }
+  .hero h1 {
+    font-size: 2.4rem;
+    margin-bottom: 16px;
+  }
+  .hero p {
+    font-size: 1.1rem;
+    color: #d9dee6;
+    max-width: 600px;
+    margin: 0 auto;
+  }
+  main {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 64px 24px;
+  }
+  .services {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 32px;
+    margin-bottom: 64px;
+  }
+  .service-card {
+    background: #fff;
+    border: 1px solid #e2ded4;
+    border-radius: 4px;
+    padding: 32px 24px;
+    text-align: center;
+  }
+  .service-card h3 {
+    color: var(--navy);
+    margin-bottom: 12px;
+    font-size: 1.1rem;
+  }
+  .service-card p {
+    font-size: 0.92rem;
+    color: #555;
+  }
+  .about {
+    background: #fff;
+    border: 1px solid #e2ded4;
+    border-radius: 4px;
+    padding: 40px;
+    margin-bottom: 64px;
+  }
+  .about h2 {
+    color: var(--navy);
+    margin-bottom: 16px;
+  }
+  footer {
+    background: var(--navy);
+    color: #b7c0cf;
+    text-align: center;
+    padding: 24px;
+    font-size: 0.85rem;
+  }
+  .test-note {
+    max-width: 960px;
+    margin: 0 auto 32px;
+    padding: 16px 24px;
+    background: #fff8e1;
+    border: 1px solid #e6d9a0;
+    border-radius: 4px;
+    font-family: system-ui, sans-serif;
+    font-size: 0.9rem;
+    color: #6b5a10;
+  }
+</style>
+</head>
+<body>
+
+<div class="test-note">
+  <strong>Lokale Testseite</strong> — dient nur zum Testen des EstateAI-Chat-Widgets. Kein Teil der Produktivanwendung.
+</div>
+
+<header>
+  <div class="logo">Müller <span>&amp;</span> Partner Immobilien</div>
+  <nav>
+    <a href="#services">Leistungen</a>
+    <a href="#about">Über uns</a>
+    <a href="#contact">Kontakt</a>
+  </nav>
+</header>
+
+<section class="hero">
+  <h1>Ihr Immobilienmakler mit Handschlagqualität</h1>
+  <p>Seit über 20 Jahren begleiten wir Käufer, Verkäufer und Mieter in der Region — persönlich, diskret und zuverlässig.</p>
+</section>
+
+<main>
+  <section id="services" class="services">
+    <div class="service-card">
+      <h3>Verkauf</h3>
+      <p>Professionelle Vermarktung Ihrer Immobilie zum bestmöglichen Preis.</p>
+    </div>
+    <div class="service-card">
+      <h3>Kauf</h3>
+      <p>Wir finden für Sie das passende Objekt — von der Suche bis zur Übergabe.</p>
+    </div>
+    <div class="service-card">
+      <h3>Bewertung</h3>
+      <p>Kostenlose, marktgerechte Einschätzung des Wertes Ihrer Immobilie.</p>
+    </div>
+  </section>
+
+  <section id="about" class="about">
+    <h2>Über uns</h2>
+    <p>
+      Müller &amp; Partner Immobilien ist ein inhabergeführtes Maklerbüro mit Sitz im Herzen der Stadt.
+      Unser Team aus erfahrenen Immobilienexperten steht Ihnen bei jedem Schritt zur Seite —
+      von der ersten Beratung bis zum erfolgreichen Abschluss.
+    </p>
+  </section>
+</main>
+
+<footer id="contact">
+  Müller &amp; Partner Immobilien &middot; Musterstraße 1, 12345 Musterstadt &middot; info@mueller-partner-immobilien.de
+</footer>
+
+<!-- EstateAI Chat Widget Embed -->
+<script src="https://rent-or-buy-ai.vercel.app/embed.js" data-estateai="74183d79-2887-4579-9a9c-772eb137c3f0" defer></script>
+
+</body>
+</html>

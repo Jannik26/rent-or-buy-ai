@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { Footer } from "@/components/footer";
 import { toast } from "sonner";
 import logo from "@/assets/estateai-logo.png";
 
@@ -69,7 +70,8 @@ function AuthPage() {
   }
 
   return (
-    <div className="min-h-screen grid lg:grid-cols-2">
+    <div className="min-h-screen flex flex-col">
+      <div className="flex-1 grid lg:grid-cols-2">
       <div className="hidden lg:flex flex-col justify-between bg-gradient-navy text-primary-foreground p-12 relative overflow-hidden">
         <div className="absolute top-0 right-0 size-96 bg-gold/10 rounded-full blur-3xl" />
         <Link to="/" className="flex items-center gap-2.5 relative">
@@ -180,6 +182,8 @@ function AuthPage() {
           </div>
         </div>
       </div>
+      </div>
+      <Footer />
     </div>
   );
 }
