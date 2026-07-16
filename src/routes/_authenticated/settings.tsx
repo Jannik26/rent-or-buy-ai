@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { DEFAULT_RESPONSE_TIME, RESPONSE_TIME_OPTIONS, type ResponseTimeValue } from "@/lib/response-time";
+import { isSafeHttpUrl } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authenticated/settings")({
   head: () => ({ meta: [{ title: "Settings – EstateAI" }] }),
@@ -17,7 +18,7 @@ function SettingsPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return null;
       const { data } = await supabase
-        .from("companies").select("id, name, greeting, response_time").eq("owner_id", user.id).maybeSingle();
+        .from("companies").select("id, name, greeting, response_time, privacy_url").eq("owner_id", user.id).maybeSingle();
       return data;
     },
   });
@@ -26,6 +27,7 @@ function SettingsPage() {
   const [name, setName] = useState("");
   const [greeting, setGreeting] = useState("");
   const [responseTime, setResponseTime] = useState<ResponseTimeValue>(DEFAULT_RESPONSE_TIME);
+  const [privacyUrl, setPrivacyUrl] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -33,16 +35,22 @@ function SettingsPage() {
       setName(company.name);
       setGreeting(company.greeting ?? "");
       setResponseTime((company.response_time as ResponseTimeValue) ?? DEFAULT_RESPONSE_TIME);
+      setPrivacyUrl(company.privacy_url ?? "");
     }
   }, [company]);
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
     if (!company) return;
+    const trimmedPrivacyUrl = privacyUrl.trim();
+    if (trimmedPrivacyUrl && !isSafeHttpUrl(trimmedPrivacyUrl)) {
+      toast.error("Bitte eine gültige http(s)-URL für die Datenschutzerklärung angeben.");
+      return;
+    }
     setBusy(true);
     const { error } = await supabase
       .from("companies")
-      .update({ name, greeting, response_time: responseTime })
+      .update({ name, greeting, response_time: responseTime, privacy_url: trimmedPrivacyUrl || null })
       .eq("id", company.id);
     setBusy(false);
     if (error) toast.error(error.message);
@@ -91,6 +99,19 @@ function SettingsPage() {
           <p className="mt-1.5 text-xs text-muted-foreground">
             Aktuell aktiv: <span className="font-medium text-foreground">{RESPONSE_TIME_OPTIONS.find((o) => o.value === responseTime)?.label}</span>
           </p>
+        </div>
+        <div>
+          <label className="text-sm font-medium">Datenschutz-URL (optional)</label>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Link zur Datenschutzerklärung Ihrer eigenen Website. Wird Besuchern im eingebetteten Chat-Widget angezeigt. Ohne Angabe erscheint kein Link.
+          </p>
+          <input
+            type="url"
+            value={privacyUrl}
+            onChange={(e) => setPrivacyUrl(e.target.value)}
+            placeholder="https://ihre-website.de/datenschutz"
+            className="mt-1.5 w-full rounded-xl border border-input bg-background px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+          />
         </div>
         <button
           type="submit"

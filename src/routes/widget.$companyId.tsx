@@ -8,14 +8,20 @@ export const Route = createFileRoute("/widget/$companyId")({
 
 function WidgetPage() {
   const { companyId } = Route.useParams();
-  const [company, setCompany] = useState<{ name: string; greeting: string } | null>(null);
+  const [company, setCompany] = useState<{ name: string; greeting: string; privacyUrl: string | null } | null>(null);
 
   useEffect(() => {
     console.log("[EstateAI WidgetPage] route companyId", companyId);
     (async () => {
       const { supabase } = await import("@/integrations/supabase/client");
-      const { data } = await supabase.from("companies").select("name, greeting").eq("id", companyId).maybeSingle();
-      if (data) setCompany({ name: data.name, greeting: data.greeting ?? "Hallo! Ich bin Ihr persönlicher Immobilienberater. Möchten Sie verkaufen, kaufen, mieten oder den Wert einer Immobilie ermitteln?" });
+      const { data } = await supabase.from("companies").select("name, greeting, privacy_url").eq("id", companyId).maybeSingle();
+      if (data) {
+        setCompany({
+          name: data.name,
+          greeting: data.greeting ?? "Hallo! Ich bin Ihr persönlicher Immobilienberater. Möchten Sie verkaufen, kaufen, mieten oder den Wert einer Immobilie ermitteln?",
+          privacyUrl: data.privacy_url ?? null,
+        });
+      }
     })();
   }, [companyId]);
 
@@ -25,7 +31,13 @@ function WidgetPage() {
 
   return (
     <div className="h-screen w-screen p-3 bg-transparent">
-      <SetterChat companyId={companyId} companyName={company.name} greeting={company.greeting} variant="panel" />
+      <SetterChat
+        companyId={companyId}
+        companyName={company.name}
+        greeting={company.greeting}
+        privacyUrl={company.privacyUrl}
+        variant="panel"
+      />
     </div>
   );
 }

@@ -3,7 +3,7 @@ import { DefaultChatTransport, type UIMessage } from "ai";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Send, ShoppingBag, Tag, Scale, Key, RotateCcw } from "lucide-react";
 import ReactMarkdown from "react-markdown";
-import { cn } from "@/lib/utils";
+import { cn, isSafeHttpUrl } from "@/lib/utils";
 
 const DATA_RE = /<<DATA>>[\s\S]*?<<END>>/g;
 const DATA_TAIL_RE = /<<DATA>>[\s\S]*$/; // unvollständiger Marker während des Streamings
@@ -41,12 +41,14 @@ export function SetterChat({
   greeting,
   apiBase = "",
   variant = "inline",
+  privacyUrl = null,
 }: {
   companyId: string;
   companyName: string;
   greeting: string;
   apiBase?: string;
   variant?: "inline" | "panel";
+  privacyUrl?: string | null;
 }) {
   const [leadId, setLeadId] = useState(() => getOrCreateLeadId(companyId));
 
@@ -257,6 +259,18 @@ export function SetterChat({
           <Send className="size-4" />
         </button>
       </form>
+
+      <p className="px-5 pb-3 text-[11px] leading-snug text-muted-foreground bg-card">
+        Ihre Angaben werden zur Bearbeitung Ihrer Immobilienanfrage verarbeitet. Bitte geben Sie keine sensiblen Daten ein.
+        {isSafeHttpUrl(privacyUrl) && (
+          <>
+            {" "}
+            <a href={privacyUrl} target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">
+              Weitere Informationen finden Sie in der Datenschutzerklärung.
+            </a>
+          </>
+        )}
+      </p>
     </div>
   );
 }
