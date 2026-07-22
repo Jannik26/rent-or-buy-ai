@@ -3,6 +3,7 @@ import { convertToModelMessages, createUIMessageStream, createUIMessageStreamRes
 import { createAnthropicProvider } from "@/lib/ai-gateway.server";
 import { buildSystemPrompt } from "@/lib/chat-prompt";
 import { responseTimePhrase } from "@/lib/response-time";
+import { isPlusAddressed, normalizeEmail } from "@/lib/validate-email";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -456,6 +457,22 @@ async function persistLeadFromTranscript(args: {
   });
 
   const data = extractData(args.assistantText);
+
+  if (data.email) {
+    const normalizedEmail = normalizeEmail(data.email);
+    if (isPlusAddressed(normalizedEmail)) {
+      console.warn("[widget] dropped plus-addressed lead email", { companyId: args.companyId });
+      await supabaseAdmin.from("system_events").insert({
+        kind: "error",
+        source: "widget.chat.plus_address_rejected",
+        message: "Plus-addressed email extracted from chat was not stored.",
+        context: { companyId: args.companyId, leadId: args.leadId },
+      });
+      delete data.email;
+    } else {
+      data.email = normalizedEmail;
+    }
+  }
 
   // ---- Load the existing lead (if any) so this turn's delta merges with prior
   // turns instead of overwriting already-known fields with null. ----

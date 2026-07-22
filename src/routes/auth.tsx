@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Footer } from "@/components/footer";
 import { toast } from "sonner";
 import logo from "@/assets/estateai-logo.png";
+import { PLUS_ADDRESS_ERROR, isPlusAddressed, normalizeEmail } from "@/lib/validate-email";
 
 export const Route = createFileRoute("/auth")({
   head: () => ({
@@ -29,11 +30,19 @@ function AuthPage() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    const normalizedEmail = normalizeEmail(email);
+    if (mode === "signup" && isPlusAddressed(normalizedEmail)) {
+      toast.error(PLUS_ADDRESS_ERROR);
+      return;
+    }
+    if (mode === "signin" && isPlusAddressed(normalizedEmail)) {
+      toast.warning(PLUS_ADDRESS_ERROR);
+    }
     setBusy(true);
     try {
       if (mode === "signup") {
         const { error } = await supabase.auth.signUp({
-          email,
+          email: normalizedEmail,
           password,
           options: {
             emailRedirectTo: `${window.location.origin}/dashboard`,
@@ -46,7 +55,10 @@ function AuthPage() {
         if (error) throw error;
         toast.success("Konto erstellt!");
       } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        const { error } = await supabase.auth.signInWithPassword({
+          email: normalizedEmail,
+          password,
+        });
         if (error) throw error;
       }
       navigate({ to: "/dashboard" });

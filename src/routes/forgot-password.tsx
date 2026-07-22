@@ -4,6 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { ArrowLeft } from "lucide-react";
 import logo from "@/assets/estateai-logo.png";
+import { PLUS_ADDRESS_ERROR, isPlusAddressed, normalizeEmail } from "@/lib/validate-email";
 
 export const Route = createFileRoute("/forgot-password")({
   head: () => ({ meta: [{ title: "Passwort vergessen – EstateAI" }] }),
@@ -17,12 +18,17 @@ function ForgotPasswordPage() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    const normalizedEmail = normalizeEmail(email);
+    if (isPlusAddressed(normalizedEmail)) {
+      toast.warning(PLUS_ADDRESS_ERROR);
+    }
     setBusy(true);
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
         redirectTo: `${window.location.origin}/reset-password`,
       });
       if (error) throw error;
+      setEmail(normalizedEmail);
       setSent(true);
       toast.success("E-Mail gesendet");
     } catch (err) {
