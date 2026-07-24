@@ -1,10 +1,23 @@
 import { useState } from "react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
-import { LayoutDashboard, Users, MessageSquare, Calendar, BarChart3, Settings, LogOut, Menu, X } from "lucide-react";
+import {
+  LayoutDashboard,
+  Users,
+  MessageSquare,
+  Calendar,
+  BarChart3,
+  Settings,
+  Shield,
+  LogOut,
+  Menu,
+  X,
+} from "lucide-react";
 import logo from "@/assets/estateai-logo.png";
 import { cn } from "@/lib/utils";
+import { checkSuperAdmin } from "@/lib/admin.functions";
 
 export const NAV = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -15,24 +28,50 @@ export const NAV = [
   { to: "/settings", label: "Settings", icon: Settings },
 ] as const;
 
+const ADMIN_NAV_ITEM = { to: "/admin", label: "Admin", icon: Shield } as const;
+
+// UX-only convenience — hides/shows the nav item. Every admin server function
+// independently re-verifies has_role() server-side, so this is never the
+// actual security boundary.
+function useIsSuperAdmin() {
+  const fn = useServerFn(checkSuperAdmin);
+  const query = useQuery({
+    queryKey: ["is-super-admin"],
+    queryFn: () => fn(),
+    staleTime: 5 * 60 * 1000,
+  });
+  return query.data?.isSuperAdmin ?? false;
+}
+
 export function AppSidebar() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const isSuperAdmin = useIsSuperAdmin();
+  const navItems = isSuperAdmin ? [...NAV, ADMIN_NAV_ITEM] : NAV;
 
   const profileQuery = useQuery({
     queryKey: ["sidebar-profile"],
     queryFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (!user) return null;
       const { data } = await supabase
-        .from("profiles").select("full_name, email, company").eq("id", user.id).maybeSingle();
+        .from("profiles")
+        .select("full_name, email, company")
+        .eq("id", user.id)
+        .maybeSingle();
       return data ?? { full_name: null, email: user.email, company: null };
     },
   });
   const profile = profileQuery.data;
   const initials = (profile?.full_name ?? profile?.email ?? "EA")
-    .split(/[\s@]/).filter(Boolean).slice(0, 2).map((s: string) => s[0]?.toUpperCase()).join("");
+    .split(/[\s@]/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((s: string) => s[0]?.toUpperCase())
+    .join("");
 
   async function signOut() {
     await qc.cancelQueries();
@@ -43,13 +82,17 @@ export function AppSidebar() {
 
   return (
     <aside className="hidden lg:flex w-64 shrink-0 bg-sidebar text-sidebar-foreground flex-col border-r border-sidebar-border">
-      <Link to="/dashboard" className="flex items-center gap-2.5 px-6 h-16 border-b border-sidebar-border">
+      <Link
+        to="/dashboard"
+        className="flex items-center gap-2.5 px-6 h-16 border-b border-sidebar-border"
+      >
         <img src={logo} alt="" className="size-8" width={32} height={32} />
         <span className="font-display text-lg">EstateAI</span>
       </Link>
       <nav className="flex-1 px-3 py-6 space-y-0.5 text-sm">
-        {NAV.map((item) => {
-          const active = pathname === item.to || (item.to !== "/dashboard" && pathname.startsWith(item.to));
+        {navItems.map((item) => {
+          const active =
+            pathname === item.to || (item.to !== "/dashboard" && pathname.startsWith(item.to));
           const Icon = item.icon;
           return (
             <Link
@@ -75,7 +118,9 @@ export function AppSidebar() {
           </div>
           <div className="min-w-0 flex-1">
             <div className="text-sm font-medium truncate">{profile?.full_name ?? "Makler"}</div>
-            <div className="text-[11px] text-sidebar-foreground/60 truncate">{profile?.company ?? "—"}</div>
+            <div className="text-[11px] text-sidebar-foreground/60 truncate">
+              {profile?.company ?? "—"}
+            </div>
           </div>
           <button
             onClick={signOut}
@@ -101,14 +146,21 @@ export function MobileNav() {
   const qc = useQueryClient();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const [open, setOpen] = useState(false);
+  const isSuperAdmin = useIsSuperAdmin();
+  const navItems = isSuperAdmin ? [...NAV, ADMIN_NAV_ITEM] : NAV;
 
   const profileQuery = useQuery({
     queryKey: ["sidebar-profile"],
     queryFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (!user) return null;
       const { data } = await supabase
-        .from("profiles").select("full_name, email, company").eq("id", user.id).maybeSingle();
+        .from("profiles")
+        .select("full_name, email, company")
+        .eq("id", user.id)
+        .maybeSingle();
       return data ?? { full_name: null, email: user.email, company: null };
     },
   });
@@ -141,11 +193,16 @@ export function MobileNav() {
 
       {open && (
         <>
-          <div className="lg:hidden fixed inset-0 top-14 z-10 bg-black/20" onClick={() => setOpen(false)} />
+          <div
+            className="lg:hidden fixed inset-0 top-14 z-10 bg-black/20"
+            onClick={() => setOpen(false)}
+          />
           <div className="lg:hidden fixed inset-x-0 top-14 z-20 bg-card border-b border-border shadow-elegant">
             <nav className="p-3 space-y-0.5 text-sm">
-              {NAV.map((item) => {
-                const active = pathname === item.to || (item.to !== "/dashboard" && pathname.startsWith(item.to));
+              {navItems.map((item) => {
+                const active =
+                  pathname === item.to ||
+                  (item.to !== "/dashboard" && pathname.startsWith(item.to));
                 const Icon = item.icon;
                 return (
                   <Link
@@ -154,7 +211,9 @@ export function MobileNav() {
                     onClick={() => setOpen(false)}
                     className={cn(
                       "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition text-sm",
-                      active ? "bg-primary/10 text-primary font-medium" : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                      active
+                        ? "bg-primary/10 text-primary font-medium"
+                        : "text-muted-foreground hover:bg-muted hover:text-foreground",
                     )}
                   >
                     <Icon className="size-4 shrink-0" />

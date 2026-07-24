@@ -1,5 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { convertToModelMessages, createUIMessageStream, createUIMessageStreamResponse, streamText, type UIMessage } from "ai";
+import {
+  convertToModelMessages,
+  createUIMessageStream,
+  createUIMessageStreamResponse,
+  streamText,
+  type UIMessage,
+} from "ai";
 import { createAnthropicProvider } from "@/lib/ai-gateway.server";
 import { buildSystemPrompt } from "@/lib/chat-prompt";
 import { responseTimePhrase } from "@/lib/response-time";
@@ -27,13 +33,40 @@ const SESSION_LIMIT_TEXT =
   "Danke, ich habe die wichtigsten Informationen aufgenommen. Für die Demo ist dieses Gespräch jetzt begrenzt. Das Immobilienbüro kann sich mit Ihnen in Verbindung setzen.";
 
 // ---- 14-Tage-Demo / Abo-Status ----
-type CompanyAccess = { id: string; subscription_status: string | null; demo_expires_at: string | null };
-type AccessResult = { allowed: true } | { allowed: false; code: "DEMO_EXPIRED" | "ACCOUNT_INACTIVE"; message: string };
+type CompanyAccess = {
+  id: string;
+  subscription_status: string | null;
+  demo_expires_at: string | null;
+  subscription_expires_at: string | null;
+};
+type AccessResult =
+  | { allowed: true }
+  | {
+      allowed: false;
+      code: "DEMO_EXPIRED" | "SUBSCRIPTION_EXPIRED" | "ACCOUNT_INACTIVE";
+      message: string;
+    };
 
 function isCompanyAllowedToUseWidget(company: CompanyAccess): AccessResult {
   const status = company.subscription_status;
-  if (status === null || status === undefined || status === "active") {
+  if (status === null || status === undefined) {
     return { allowed: true };
+  }
+  if (status === "active") {
+    // No subscription_expires_at set = explicitly unlimited (never blocks).
+    // Set and in the past = the subscription has actually lapsed, even
+    // though the status was never manually flipped away from "active".
+    const expires = company.subscription_expires_at
+      ? new Date(company.subscription_expires_at)
+      : null;
+    if (!expires || expires.getTime() > Date.now()) {
+      return { allowed: true };
+    }
+    return {
+      allowed: false,
+      code: "SUBSCRIPTION_EXPIRED",
+      message: "Das Abonnement ist abgelaufen. Bitte kontaktieren Sie den Anbieter.",
+    };
   }
   if (status === "trial") {
     const expires = company.demo_expires_at ? new Date(company.demo_expires_at) : null;
@@ -124,10 +157,15 @@ export const Route = createFileRoute("/api/public/widget/chat")({
             console.warn("[widget] blocked demo company outside public /demo", {
               referer: request.headers.get("referer") ?? request.headers.get("referrer") ?? null,
             });
-            return new Response(JSON.stringify({ error: "Demo-Unternehmen ist nur auf der öffentlichen Demo erlaubt." }), {
-              status: 400,
-              headers: { ...corsHeaders, "content-type": "application/json" },
-            });
+            return new Response(
+              JSON.stringify({
+                error: "Demo-Unternehmen ist nur auf der öffentlichen Demo erlaubt.",
+              }),
+              {
+                status: 400,
+                headers: { ...corsHeaders, "content-type": "application/json" },
+              },
+            );
           }
           const leadIdRaw = body.leadId ?? null;
           const leadId = leadIdRaw && UUID_RE.test(leadIdRaw) ? leadIdRaw : null;
@@ -138,7 +176,9 @@ export const Route = createFileRoute("/api/public/widget/chat")({
           if (!key) {
             console.error("[widget] ANTHROPIC_API_KEY fehlt");
             return new Response(
-              JSON.stringify({ error: "KI-Dienst ist nicht konfiguriert (ANTHROPIC_API_KEY fehlt)." }),
+              JSON.stringify({
+                error: "KI-Dienst ist nicht konfiguriert (ANTHROPIC_API_KEY fehlt).",
+              }),
               { status: 500, headers: { ...corsHeaders, "content-type": "application/json" } },
             );
           }
@@ -147,7 +187,9 @@ export const Route = createFileRoute("/api/public/widget/chat")({
 
           const { data: company } = await supabaseAdmin
             .from("companies")
-            .select("id, name, subscription_status, demo_expires_at, response_time")
+            .select(
+              "id, name, subscription_status, demo_expires_at, subscription_expires_at, response_time",
+            )
             .eq("id", companyId)
             .maybeSingle();
 
@@ -160,9 +202,15 @@ export const Route = createFileRoute("/api/public/widget/chat")({
 
           const access = isCompanyAllowedToUseWidget(company);
           if (!access.allowed) {
+            const source =
+              access.code === "DEMO_EXPIRED"
+                ? "widget.chat.demo_expired"
+                : access.code === "SUBSCRIPTION_EXPIRED"
+                  ? "widget.chat.subscription_expired"
+                  : "widget.chat.account_inactive";
             await supabaseAdmin.from("system_events").insert({
               kind: "error",
-              source: access.code === "DEMO_EXPIRED" ? "widget.chat.demo_expired" : "widget.chat.account_inactive",
+              source,
               message: access.message,
               context: { companyId: company.id, subscriptionStatus: company.subscription_status },
             });
@@ -224,13 +272,23 @@ export const Route = createFileRoute("/api/public/widget/chat")({
             supabaseAdmin
               .from("widget_throttle")
               .upsert(
-                { company_id: company.id, bucket_key: "daily", minute_bucket: dayBucket, count: dailyCount + 1 },
+                {
+                  company_id: company.id,
+                  bucket_key: "daily",
+                  minute_bucket: dayBucket,
+                  count: dailyCount + 1,
+                },
                 { onConflict: "company_id,bucket_key,minute_bucket" },
               ),
             supabaseAdmin
               .from("widget_throttle")
               .upsert(
-                { company_id: company.id, bucket_key: sessionBucketKey, minute_bucket: dayBucket, count: sessionCount + 1 },
+                {
+                  company_id: company.id,
+                  bucket_key: sessionBucketKey,
+                  minute_bucket: dayBucket,
+                  count: sessionCount + 1,
+                },
                 { onConflict: "company_id,bucket_key,minute_bucket" },
               ),
           ]);
@@ -251,7 +309,12 @@ export const Route = createFileRoute("/api/public/widget/chat")({
           await supabaseAdmin
             .from("widget_throttle")
             .upsert(
-              { company_id: company.id, bucket_key: bucketKey, minute_bucket: minuteBucket, count: nextCount },
+              {
+                company_id: company.id,
+                bucket_key: bucketKey,
+                minute_bucket: minuteBucket,
+                count: nextCount,
+              },
               { onConflict: "company_id,bucket_key,minute_bucket" },
             );
           if (nextCount > PER_MINUTE_LIMIT) {
@@ -284,25 +347,24 @@ export const Route = createFileRoute("/api/public/widget/chat")({
             onError: (event) => {
               console.error("[widget] streamText error", event);
               const message = event instanceof Error ? event.message : JSON.stringify(event);
-              void supabaseAdmin
-                .from("system_events")
-                .insert({
-                  kind: "error",
-                  source: "widget.chat.stream",
-                  message: message.slice(0, 500),
-                  context: { companyId: company.id },
-                });
+              void supabaseAdmin.from("system_events").insert({
+                kind: "error",
+                source: "widget.chat.stream",
+                message: message.slice(0, 500),
+                context: { companyId: company.id },
+              });
             },
             onFinish: async ({ text }) => {
               console.log("[widget] chat finished", { chars: text.length });
-              await supabaseAdmin
-                .from("system_events")
-                .insert({
-                  kind: "success",
-                  source: "widget.chat",
-                  message: text.replace(/<<DATA>>[\s\S]*?<<END>>/g, "").trim().slice(0, 240),
-                  context: { companyId: company.id, chars: text.length },
-                });
+              await supabaseAdmin.from("system_events").insert({
+                kind: "success",
+                source: "widget.chat",
+                message: text
+                  .replace(/<<DATA>>[\s\S]*?<<END>>/g, "")
+                  .trim()
+                  .slice(0, 240),
+                context: { companyId: company.id, chars: text.length },
+              });
               try {
                 console.log("companyId received:", companyId);
                 await persistLeadFromTranscript({
@@ -372,9 +434,7 @@ type ExtractedData = {
 };
 
 function partsToText(parts: UIMessage["parts"]) {
-  return parts
-    .map((p) => (p.type === "text" ? (p as { text: string }).text : ""))
-    .join("");
+  return parts.map((p) => (p.type === "text" ? (p as { text: string }).text : "")).join("");
 }
 
 function extractData(text: string): ExtractedData {
@@ -393,10 +453,7 @@ function extractData(text: string): ExtractedData {
 
 function scoreFromData(d: ExtractedData): { label: "hot" | "warm" | "cold"; num: number } {
   const has = (v?: string) => Boolean(v && v.trim().length > 0);
-  const contactPts =
-    (has(d.name) ? 15 : 0) +
-    (has(d.email) ? 20 : 0) +
-    (has(d.phone) ? 15 : 0);
+  const contactPts = (has(d.name) ? 15 : 0) + (has(d.email) ? 20 : 0) + (has(d.phone) ? 15 : 0);
   const qualPts =
     (has(d.intent as string) ? 10 : 0) +
     (has(d.property_type) || has(d.object_desc) ? 10 : 0) +
@@ -528,7 +585,11 @@ async function persistLeadFromTranscript(args: {
     qualification_summary:
       data._summary ??
       existingLead?.qualification_summary ??
-      transcript.slice(-2).map((t) => `${t.role}: ${t.content}`).join(" · ").slice(0, 280),
+      transcript
+        .slice(-2)
+        .map((t) => `${t.role}: ${t.content}`)
+        .join(" · ")
+        .slice(0, 280),
     messages: transcript as unknown as never,
   };
 
@@ -552,11 +613,13 @@ async function persistLeadFromTranscript(args: {
     try {
       const key = process.env.ANTHROPIC_API_KEY;
       if (key) {
-        const { generateLeadSummaryFromTranscript, summaryToLeadUpdate } = await import(
-          "@/lib/lead-summary.server"
-        );
+        const { generateLeadSummaryFromTranscript, summaryToLeadUpdate } =
+          await import("@/lib/lead-summary.server");
         const summary = await generateLeadSummaryFromTranscript(transcript, key);
-        await supabaseAdmin.from("leads").update(summaryToLeadUpdate(summary)).eq("id", finalLeadId);
+        await supabaseAdmin
+          .from("leads")
+          .update(summaryToLeadUpdate(summary))
+          .eq("id", finalLeadId);
         console.log("[widget] structured lead summary generated", { leadId: finalLeadId });
       }
     } catch (err) {
