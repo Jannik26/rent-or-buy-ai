@@ -29,10 +29,25 @@ function partsToText(parts: UIMessage["parts"]) {
 }
 
 const QUICK_INTENTS = [
-  { id: "verkauf", label: "Ich möchte verkaufen", text: "Ich möchte eine Immobilie verkaufen.", icon: Tag },
-  { id: "kauf", label: "Ich möchte kaufen", text: "Ich möchte eine Immobilie kaufen.", icon: ShoppingBag },
+  {
+    id: "verkauf",
+    label: "Ich möchte verkaufen",
+    text: "Ich möchte eine Immobilie verkaufen.",
+    icon: Tag,
+  },
+  {
+    id: "kauf",
+    label: "Ich möchte kaufen",
+    text: "Ich möchte eine Immobilie kaufen.",
+    icon: ShoppingBag,
+  },
   { id: "miete", label: "Ich möchte mieten", text: "Ich möchte eine Immobilie mieten.", icon: Key },
-  { id: "bewertung", label: "Wert ermitteln", text: "Ich möchte den Wert meiner Immobilie erfahren.", icon: Scale },
+  {
+    id: "bewertung",
+    label: "Wert ermitteln",
+    text: "Ich möchte den Wert meiner Immobilie erfahren.",
+    icon: Scale,
+  },
 ] as const;
 
 export function SetterChat({
@@ -42,6 +57,7 @@ export function SetterChat({
   apiBase = "",
   variant = "inline",
   privacyUrl = null,
+  termsUrl = null,
 }: {
   companyId: string;
   companyName: string;
@@ -49,6 +65,7 @@ export function SetterChat({
   apiBase?: string;
   variant?: "inline" | "panel";
   privacyUrl?: string | null;
+  termsUrl?: string | null;
 }) {
   const [leadId, setLeadId] = useState(() => getOrCreateLeadId(companyId));
 
@@ -151,15 +168,20 @@ export function SetterChat({
     <div
       className={cn(
         "flex flex-col bg-card text-card-foreground overflow-hidden",
-        variant === "inline" ? "rounded-2xl border border-border shadow-elegant h-[560px]" : "h-full",
+        variant === "inline"
+          ? "rounded-2xl border border-border shadow-elegant h-[560px]"
+          : "h-full",
       )}
     >
       <header className="bg-gradient-navy text-primary-foreground px-5 py-4 flex items-center gap-3">
-        <div className="size-9 rounded-full bg-gold/20 ring-gold grid place-items-center text-gold font-display text-lg">E</div>
+        <div className="size-9 rounded-full bg-gold/20 ring-gold grid place-items-center text-gold font-display text-lg">
+          E
+        </div>
         <div className="min-w-0">
           <div className="font-display text-base leading-tight">{companyName}</div>
           <div className="text-[11px] uppercase tracking-[0.18em] text-primary-foreground/60 flex items-center gap-1.5">
-            <span className="size-1.5 rounded-full bg-success animate-pulse" /> Online · EstateAI-Berater
+            <span className="size-1.5 rounded-full bg-success animate-pulse" /> Online ·
+            EstateAI-Berater
           </div>
         </div>
         <button
@@ -174,7 +196,9 @@ export function SetterChat({
       </header>
 
       <p className="px-5 py-1.5 text-[11px] leading-snug text-muted-foreground bg-muted/40 border-b border-border">
-        Ich bin ein digitaler Assistent dieses Immobilienbüros. Ihre Angaben werden zur Bearbeitung und Weiterleitung Ihrer Anfrage verarbeitet. Bitte keine besonders sensiblen Informationen eingeben.
+        Ich bin ein digitaler Assistent dieses Immobilienbüros. Ihre Angaben werden zur Bearbeitung
+        und Weiterleitung Ihrer Anfrage verarbeitet. Bitte keine besonders sensiblen Informationen
+        eingeben.
       </p>
 
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-5 py-5 space-y-4 bg-muted/30">
@@ -261,16 +285,36 @@ export function SetterChat({
       </form>
 
       <p className="px-5 pb-3 text-[11px] leading-snug text-muted-foreground bg-card">
-        Ihre Angaben werden zur Bearbeitung Ihrer Immobilienanfrage verarbeitet. Bitte geben Sie keine sensiblen Daten ein.
+        Ihre Angaben werden zur Bearbeitung Ihrer Immobilienanfrage verarbeitet. Bitte geben Sie
+        keine sensiblen Daten ein.
         {isSafeHttpUrl(privacyUrl) && (
           <>
             {" "}
-            <a href={privacyUrl} target="_blank" rel="noopener noreferrer" className="underline hover:text-foreground">
+            <a
+              href={privacyUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline hover:text-foreground"
+            >
               Weitere Informationen finden Sie in der Datenschutzerklärung.
             </a>
           </>
         )}
       </p>
+      {isSafeHttpUrl(termsUrl) && (
+        <p className="px-5 pb-3 text-[11px] leading-snug text-muted-foreground bg-card">
+          Mit der Nutzung des Chats akzeptieren Sie die{" "}
+          <a
+            href={termsUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="underline hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm px-0.5 py-1 -my-1 inline-block"
+          >
+            AGB
+          </a>{" "}
+          des Immobilienunternehmens.
+        </p>
+      )}
     </div>
   );
 }

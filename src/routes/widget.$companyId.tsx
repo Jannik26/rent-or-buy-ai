@@ -8,25 +8,39 @@ export const Route = createFileRoute("/widget/$companyId")({
 
 function WidgetPage() {
   const { companyId } = Route.useParams();
-  const [company, setCompany] = useState<{ name: string; greeting: string; privacyUrl: string | null } | null>(null);
+  const [company, setCompany] = useState<{
+    name: string;
+    greeting: string;
+    privacyUrl: string | null;
+    termsUrl: string | null;
+  } | null>(null);
 
   useEffect(() => {
     console.log("[EstateAI WidgetPage] route companyId", companyId);
     (async () => {
       const { supabase } = await import("@/integrations/supabase/client");
-      const { data } = await supabase.from("companies").select("name, greeting, privacy_url").eq("id", companyId).maybeSingle();
+      const { data } = await supabase
+        .from("companies")
+        .select("name, greeting, privacy_url, terms_url")
+        .eq("id", companyId)
+        .maybeSingle();
       if (data) {
         setCompany({
           name: data.name,
-          greeting: data.greeting ?? "Hallo! Ich bin Ihr persönlicher Immobilienberater. Möchten Sie verkaufen, kaufen, mieten oder den Wert einer Immobilie ermitteln?",
+          greeting:
+            data.greeting ??
+            "Hallo! Ich bin Ihr persönlicher Immobilienberater. Möchten Sie verkaufen, kaufen, mieten oder den Wert einer Immobilie ermitteln?",
           privacyUrl: data.privacy_url ?? null,
+          termsUrl: data.terms_url ?? null,
         });
       }
     })();
   }, [companyId]);
 
   if (!company) {
-    return <div className="h-screen grid place-items-center text-sm text-muted-foreground">Lade…</div>;
+    return (
+      <div className="h-screen grid place-items-center text-sm text-muted-foreground">Lade…</div>
+    );
   }
 
   return (
@@ -36,6 +50,7 @@ function WidgetPage() {
         companyName={company.name}
         greeting={company.greeting}
         privacyUrl={company.privacyUrl}
+        termsUrl={company.termsUrl}
         variant="panel"
       />
     </div>

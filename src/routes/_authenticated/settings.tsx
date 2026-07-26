@@ -3,7 +3,11 @@ import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { DEFAULT_RESPONSE_TIME, RESPONSE_TIME_OPTIONS, type ResponseTimeValue } from "@/lib/response-time";
+import {
+  DEFAULT_RESPONSE_TIME,
+  RESPONSE_TIME_OPTIONS,
+  type ResponseTimeValue,
+} from "@/lib/response-time";
 import { isSafeHttpUrl } from "@/lib/utils";
 
 export const Route = createFileRoute("/_authenticated/settings")({
@@ -15,10 +19,15 @@ function SettingsPage() {
   const companyQuery = useQuery({
     queryKey: ["company"],
     queryFn: async () => {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (!user) return null;
       const { data } = await supabase
-        .from("companies").select("id, name, greeting, response_time, privacy_url").eq("owner_id", user.id).maybeSingle();
+        .from("companies")
+        .select("id, name, greeting, response_time, privacy_url, terms_url")
+        .eq("owner_id", user.id)
+        .maybeSingle();
       return data;
     },
   });
@@ -28,6 +37,7 @@ function SettingsPage() {
   const [greeting, setGreeting] = useState("");
   const [responseTime, setResponseTime] = useState<ResponseTimeValue>(DEFAULT_RESPONSE_TIME);
   const [privacyUrl, setPrivacyUrl] = useState("");
+  const [termsUrl, setTermsUrl] = useState("");
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -36,6 +46,7 @@ function SettingsPage() {
       setGreeting(company.greeting ?? "");
       setResponseTime((company.response_time as ResponseTimeValue) ?? DEFAULT_RESPONSE_TIME);
       setPrivacyUrl(company.privacy_url ?? "");
+      setTermsUrl(company.terms_url ?? "");
     }
   }, [company]);
 
@@ -47,10 +58,23 @@ function SettingsPage() {
       toast.error("Bitte eine gültige http(s)-URL für die Datenschutzerklärung angeben.");
       return;
     }
+    const trimmedTermsUrl = termsUrl.trim();
+    if (trimmedTermsUrl && !isSafeHttpUrl(trimmedTermsUrl)) {
+      toast.error(
+        "Bitte geben Sie eine vollständige URL ein, zum Beispiel https://www.ihre-maklerseite.de/agb.",
+      );
+      return;
+    }
     setBusy(true);
     const { error } = await supabase
       .from("companies")
-      .update({ name, greeting, response_time: responseTime, privacy_url: trimmedPrivacyUrl || null })
+      .update({
+        name,
+        greeting,
+        response_time: responseTime,
+        privacy_url: trimmedPrivacyUrl || null,
+        terms_url: trimmedTermsUrl || null,
+      })
       .eq("id", company.id);
     setBusy(false);
     if (error) toast.error(error.message);
@@ -63,8 +87,13 @@ function SettingsPage() {
   return (
     <div className="p-4 sm:p-8 max-w-2xl mx-auto">
       <h1 className="font-display text-2xl sm:text-3xl">Settings</h1>
-      <p className="mt-2 text-sm text-muted-foreground">Personalisieren Sie Ihren EstateAI-Assistenten.</p>
-      <form onSubmit={save} className="mt-8 space-y-5 rounded-2xl border border-border bg-card p-6 shadow-soft">
+      <p className="mt-2 text-sm text-muted-foreground">
+        Personalisieren Sie Ihren EstateAI-Assistenten.
+      </p>
+      <form
+        onSubmit={save}
+        className="mt-8 space-y-5 rounded-2xl border border-border bg-card p-6 shadow-soft"
+      >
         <div>
           <label className="text-sm font-medium">Unternehmensname</label>
           <input
@@ -85,7 +114,8 @@ function SettingsPage() {
         <div>
           <label className="text-sm font-medium">Rückmeldezeitraum im Chat</label>
           <p className="mt-1 text-xs text-muted-foreground">
-            Dieser Zeitraum wird Besuchern im Chat genannt, z. B. „Ein Makler meldet sich bei Ihnen innerhalb von 24 Stunden."
+            Dieser Zeitraum wird Besuchern im Chat genannt, z. B. „Ein Makler meldet sich bei Ihnen
+            innerhalb von 24 Stunden."
           </p>
           <select
             value={responseTime}
@@ -93,25 +123,51 @@ function SettingsPage() {
             className="mt-1.5 w-full rounded-xl border border-input bg-background px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-ring"
           >
             {RESPONSE_TIME_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
             ))}
           </select>
           <p className="mt-1.5 text-xs text-muted-foreground">
-            Aktuell aktiv: <span className="font-medium text-foreground">{RESPONSE_TIME_OPTIONS.find((o) => o.value === responseTime)?.label}</span>
+            Aktuell aktiv:{" "}
+            <span className="font-medium text-foreground">
+              {RESPONSE_TIME_OPTIONS.find((o) => o.value === responseTime)?.label}
+            </span>
           </p>
         </div>
-        <div>
-          <label className="text-sm font-medium">Datenschutz-URL (optional)</label>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Link zur Datenschutzerklärung Ihrer eigenen Website. Wird Besuchern im eingebetteten Chat-Widget angezeigt. Ohne Angabe erscheint kein Link.
-          </p>
-          <input
-            type="url"
-            value={privacyUrl}
-            onChange={(e) => setPrivacyUrl(e.target.value)}
-            placeholder="https://ihre-website.de/datenschutz"
-            className="mt-1.5 w-full rounded-xl border border-input bg-background px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-ring"
-          />
+        <div className="pt-2 border-t border-border">
+          <h2 className="text-sm font-semibold">Rechtliche Links</h2>
+          <div className="mt-4 space-y-5">
+            <div>
+              <label className="text-sm font-medium">Datenschutz-URL (optional)</label>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Link zur Datenschutzerklärung Ihrer eigenen Website. Wird Besuchern im eingebetteten
+                Chat-Widget angezeigt. Ohne Angabe erscheint kein Link.
+              </p>
+              <input
+                type="url"
+                value={privacyUrl}
+                onChange={(e) => setPrivacyUrl(e.target.value)}
+                placeholder="https://ihre-website.de/datenschutz"
+                className="mt-1.5 w-full rounded-xl border border-input bg-background px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium">Link zu Ihren AGB</label>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Dieser Link wird im EstateAI-Widget angezeigt. Verwenden Sie die AGB-Seite Ihres
+                Unternehmens.
+              </p>
+              <input
+                type="text"
+                inputMode="url"
+                value={termsUrl}
+                onChange={(e) => setTermsUrl(e.target.value)}
+                placeholder="https://www.ihre-maklerseite.de/agb"
+                className="mt-1.5 w-full rounded-xl border border-input bg-background px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+              />
+            </div>
+          </div>
         </div>
         <button
           type="submit"
