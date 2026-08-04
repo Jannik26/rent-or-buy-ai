@@ -25,7 +25,7 @@ export const NAV = [
   { to: "/conversations", label: "Conversations", icon: MessageSquare },
   { to: "/appointments", label: "Appointments", icon: Calendar },
   { to: "/analytics", label: "Analytics", icon: BarChart3 },
-  { to: "/settings", label: "Settings", icon: Settings },
+  { to: "/settings", label: "Einstellungen", icon: Settings },
 ] as const;
 
 const ADMIN_NAV_ITEM = { to: "/admin", label: "Admin", icon: Shield } as const;

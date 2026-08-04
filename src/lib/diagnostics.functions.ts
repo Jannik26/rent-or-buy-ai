@@ -2,8 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { generateText } from "ai";
 import { createAnthropicProvider } from "@/lib/ai-gateway.server";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-
-const DEMO_COMPANY_ID = "00000000-0000-0000-0000-000000000000";
+import { DEMO_COMPANY_ID } from "@/lib/demo-company";
 
 export type DiagnosticsResult = {
   checkedAt: string;
@@ -31,7 +30,6 @@ export const runDiagnostics = createServerFn({ method: "POST" })
 
     const checkedAt = new Date().toISOString();
 
-
     // Supabase + companyId check
     let supabase = { ok: false, detail: "Nicht geprüft" };
     let companyId = { ok: false, value: DEMO_COMPANY_ID };
@@ -46,9 +44,7 @@ export const runDiagnostics = createServerFn({ method: "POST" })
         supabase = { ok: false, detail: `DB-Fehler: ${error.message}` };
       } else {
         supabase = { ok: true, detail: "Verbunden" };
-        companyId = data
-          ? { ok: true, value: data.id }
-          : { ok: false, value: DEMO_COMPANY_ID };
+        companyId = data ? { ok: true, value: data.id } : { ok: false, value: DEMO_COMPANY_ID };
       }
     } catch (err) {
       supabase = { ok: false, detail: err instanceof Error ? err.message : String(err) };
@@ -101,12 +97,13 @@ export const runDiagnostics = createServerFn({ method: "POST" })
           .limit(1)
           .maybeSingle(),
       ]);
-      if (errRow) lastError = { at: errRow.created_at, source: errRow.source, message: errRow.message };
-      if (okRow) lastSuccess = { at: okRow.created_at, source: okRow.source, message: okRow.message };
+      if (errRow)
+        lastError = { at: errRow.created_at, source: errRow.source, message: errRow.message };
+      if (okRow)
+        lastSuccess = { at: okRow.created_at, source: okRow.source, message: okRow.message };
     } catch {
       /* ignore */
     }
 
     return { checkedAt, companyId, supabase, anthropicApiKey, aiModel, lastError, lastSuccess };
   });
-

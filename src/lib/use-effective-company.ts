@@ -1,15 +1,18 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { DEMO_COMPANY_ID } from "@/lib/demo-company";
 
 export type EffectiveCompany = { id: string; name: string; greeting: string };
 
 export const DEMO_COMPANY: EffectiveCompany = {
-  id: "00000000-0000-0000-0000-000000000000",
+  id: DEMO_COMPANY_ID,
   name: "EstateAI Demo Immobilien",
-  greeting: "Hallo! Ich bin Ihr persönlicher Immobilienberater. Möchten Sie verkaufen, kaufen, mieten oder den Wert einer Immobilie ermitteln?",
+  greeting:
+    "Hallo! Ich bin Ihr persönlicher Immobilienberater. Möchten Sie verkaufen, kaufen, mieten oder den Wert einer Immobilie ermitteln?",
 };
 
-const DEFAULT_GREETING = "Hallo! Ich bin Ihr persönlicher Immobilienberater. Möchten Sie verkaufen, kaufen, mieten oder den Wert einer Immobilie ermitteln?";
+const DEFAULT_GREETING =
+  "Hallo! Ich bin Ihr persönlicher Immobilienberater. Möchten Sie verkaufen, kaufen, mieten oder den Wert einer Immobilie ermitteln?";
 
 /**
  * Returns the currently authenticated user's own company (auto-creating one
@@ -25,7 +28,9 @@ export function useEffectiveCompany(initial?: EffectiveCompany | null) {
     let cancelled = false;
 
     async function resolve() {
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
       if (!user) {
         if (!cancelled) setCompany(null);
         return;

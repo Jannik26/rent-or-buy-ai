@@ -1,182 +1,172 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
-import { toast } from "sonner";
+import { useState } from "react";
+import { SettingsPageHeader } from "@/components/settings/SettingsPageHeader";
+import { ProfileSettingsForm } from "@/components/settings/ProfileSettingsForm";
+import { CompanySettingsForm } from "@/components/settings/CompanySettingsForm";
+import { ComingSoonSettingsCard } from "@/components/settings/ComingSoonSettingsCard";
+import { BillingSettingsSection } from "@/components/settings/BillingSettingsSection";
+import { useUnsavedChangesGuard } from "@/lib/settings/use-unsaved-changes-guard";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  DEFAULT_RESPONSE_TIME,
-  RESPONSE_TIME_OPTIONS,
-  type ResponseTimeValue,
-} from "@/lib/response-time";
-import { isSafeHttpUrl } from "@/lib/utils";
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export const Route = createFileRoute("/_authenticated/settings")({
-  head: () => ({ meta: [{ title: "Settings – EstateAI" }] }),
+  head: () => ({ meta: [{ title: "Einstellungen – EstateAI" }] }),
   component: SettingsPage,
 });
 
+const TABS = [
+  { value: "profil", label: "Profil" },
+  { value: "unternehmen", label: "Unternehmen" },
+  { value: "sicherheit", label: "Sicherheit" },
+  { value: "benachrichtigungen", label: "Benachrichtigungen" },
+  { value: "abo", label: "Abo & Abrechnung" },
+  { value: "integrationen", label: "Integrationen" },
+] as const;
+
+type TabValue = (typeof TABS)[number]["value"];
+
 function SettingsPage() {
-  const companyQuery = useQuery({
-    queryKey: ["company"],
-    queryFn: async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return null;
-      const { data } = await supabase
-        .from("companies")
-        .select("id, name, greeting, response_time, privacy_url, terms_url")
-        .eq("owner_id", user.id)
-        .maybeSingle();
-      return data;
-    },
-  });
-  const company = companyQuery.data;
+  const [activeTab, setActiveTab] = useState<TabValue>("profil");
+  const [pendingTab, setPendingTab] = useState<TabValue | null>(null);
+  const [profileDirty, setProfileDirty] = useState(false);
+  const [companyDirty, setCompanyDirty] = useState(false);
 
-  const [name, setName] = useState("");
-  const [greeting, setGreeting] = useState("");
-  const [responseTime, setResponseTime] = useState<ResponseTimeValue>(DEFAULT_RESPONSE_TIME);
-  const [privacyUrl, setPrivacyUrl] = useState("");
-  const [termsUrl, setTermsUrl] = useState("");
-  const [busy, setBusy] = useState(false);
+  const hasUnsavedChanges = profileDirty || companyDirty;
+  const blocker = useUnsavedChangesGuard(hasUnsavedChanges);
 
-  useEffect(() => {
-    if (company) {
-      setName(company.name);
-      setGreeting(company.greeting ?? "");
-      setResponseTime((company.response_time as ResponseTimeValue) ?? DEFAULT_RESPONSE_TIME);
-      setPrivacyUrl(company.privacy_url ?? "");
-      setTermsUrl(company.terms_url ?? "");
-    }
-  }, [company]);
-
-  async function save(e: React.FormEvent) {
-    e.preventDefault();
-    if (!company) return;
-    const trimmedPrivacyUrl = privacyUrl.trim();
-    if (trimmedPrivacyUrl && !isSafeHttpUrl(trimmedPrivacyUrl)) {
-      toast.error("Bitte eine gültige http(s)-URL für die Datenschutzerklärung angeben.");
-      return;
-    }
-    const trimmedTermsUrl = termsUrl.trim();
-    if (trimmedTermsUrl && !isSafeHttpUrl(trimmedTermsUrl)) {
-      toast.error(
-        "Bitte geben Sie eine vollständige URL ein, zum Beispiel https://www.ihre-maklerseite.de/agb.",
-      );
-      return;
-    }
-    setBusy(true);
-    const { error } = await supabase
-      .from("companies")
-      .update({
-        name,
-        greeting,
-        response_time: responseTime,
-        privacy_url: trimmedPrivacyUrl || null,
-        terms_url: trimmedTermsUrl || null,
-      })
-      .eq("id", company.id);
-    setBusy(false);
-    if (error) toast.error(error.message);
-    else {
-      toast.success("Gespeichert");
-      companyQuery.refetch();
+  function requestTabChange(next: string) {
+    const nextTab = next as TabValue;
+    if (nextTab === activeTab) return;
+    const activeTabIsDirty =
+      (activeTab === "profil" && profileDirty) || (activeTab === "unternehmen" && companyDirty);
+    if (activeTabIsDirty) {
+      setPendingTab(nextTab);
+    } else {
+      setActiveTab(nextTab);
     }
   }
 
+  function confirmDiscardAndSwitch() {
+    if (activeTab === "profil") setProfileDirty(false);
+    if (activeTab === "unternehmen") setCompanyDirty(false);
+    if (pendingTab) setActiveTab(pendingTab);
+    setPendingTab(null);
+  }
+
   return (
-    <div className="p-4 sm:p-8 max-w-2xl mx-auto">
-      <h1 className="font-display text-2xl sm:text-3xl">Settings</h1>
-      <p className="mt-2 text-sm text-muted-foreground">
-        Personalisieren Sie Ihren EstateAI-Assistenten.
-      </p>
-      <form
-        onSubmit={save}
-        className="mt-8 space-y-5 rounded-2xl border border-border bg-card p-6 shadow-soft"
+    <div className="p-4 sm:p-8 max-w-3xl mx-auto space-y-6">
+      <SettingsPageHeader
+        title="Einstellungen"
+        subtitle="Verwalte dein Profil, dein Unternehmen und deine Kontoeinstellungen."
+      />
+
+      <Tabs value={activeTab} onValueChange={requestTabChange}>
+        <TabsList className="flex-wrap h-auto">
+          {TABS.map((tab) => (
+            <TabsTrigger key={tab.value} value={tab.value}>
+              {tab.label}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+
+        <TabsContent value="profil" className="mt-6">
+          <ProfileSettingsForm onDirtyChange={setProfileDirty} />
+        </TabsContent>
+
+        <TabsContent value="unternehmen" className="mt-6">
+          <CompanySettingsForm onDirtyChange={setCompanyDirty} />
+        </TabsContent>
+
+        <TabsContent value="sicherheit" className="mt-6">
+          <ComingSoonSettingsCard
+            title="Sicherheit"
+            description="Verwalte Passwort, Zwei-Faktor-Authentifizierung und aktive Sitzungen."
+            fields={[
+              "Passwort ändern",
+              "Zwei-Faktor-Authentifizierung",
+              "Aktive Sitzungen",
+              "Konto löschen",
+            ]}
+          />
+        </TabsContent>
+
+        <TabsContent value="benachrichtigungen" className="mt-6">
+          <ComingSoonSettingsCard
+            title="Benachrichtigungen"
+            description="Lege fest, über welche Aktivitäten du informiert wirst."
+            fields={[
+              "Neue Leads",
+              "Terminvereinbarungen",
+              "Trial- und Abonnementereignisse",
+              "Systemmeldungen",
+              "E-Mail-Benachrichtigungen",
+            ]}
+          />
+        </TabsContent>
+
+        <TabsContent value="abo" className="mt-6">
+          <BillingSettingsSection />
+        </TabsContent>
+
+        <TabsContent value="integrationen" className="mt-6">
+          <ComingSoonSettingsCard
+            title="Integrationen"
+            description="Verbinde EstateAI mit deinen bestehenden Werkzeugen."
+            fields={[
+              "API-Schlüssel",
+              "Webhooks",
+              "CRM-Verbindungen",
+              "Kalender",
+              "E-Mail",
+              "Website-Widget",
+            ]}
+          />
+        </TabsContent>
+      </Tabs>
+
+      <AlertDialog open={pendingTab !== null} onOpenChange={(open) => !open && setPendingTab(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Ungespeicherte Änderungen</AlertDialogTitle>
+            <AlertDialogDescription>
+              Du hast ungespeicherte Änderungen. Möchtest du wirklich wechseln, ohne zu speichern?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setPendingTab(null)}>Abbrechen</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDiscardAndSwitch}>
+              Verwerfen und wechseln
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={blocker.status === "blocked"}
+        onOpenChange={(open) => !open && blocker.reset?.()}
       >
-        <div>
-          <label className="text-sm font-medium">Unternehmensname</label>
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="mt-1.5 w-full rounded-xl border border-input bg-background px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-ring"
-          />
-        </div>
-        <div>
-          <label className="text-sm font-medium">Begrüßung</label>
-          <textarea
-            value={greeting}
-            onChange={(e) => setGreeting(e.target.value)}
-            rows={3}
-            className="mt-1.5 w-full rounded-xl border border-input bg-background px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-ring resize-none"
-          />
-        </div>
-        <div>
-          <label className="text-sm font-medium">Rückmeldezeitraum im Chat</label>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Dieser Zeitraum wird Besuchern im Chat genannt, z. B. „Ein Makler meldet sich bei Ihnen
-            innerhalb von 24 Stunden."
-          </p>
-          <select
-            value={responseTime}
-            onChange={(e) => setResponseTime(e.target.value as ResponseTimeValue)}
-            className="mt-1.5 w-full rounded-xl border border-input bg-background px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-ring"
-          >
-            {RESPONSE_TIME_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-          <p className="mt-1.5 text-xs text-muted-foreground">
-            Aktuell aktiv:{" "}
-            <span className="font-medium text-foreground">
-              {RESPONSE_TIME_OPTIONS.find((o) => o.value === responseTime)?.label}
-            </span>
-          </p>
-        </div>
-        <div className="pt-2 border-t border-border">
-          <h2 className="text-sm font-semibold">Rechtliche Links</h2>
-          <div className="mt-4 space-y-5">
-            <div>
-              <label className="text-sm font-medium">Datenschutz-URL (optional)</label>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Link zur Datenschutzerklärung Ihrer eigenen Website. Wird Besuchern im eingebetteten
-                Chat-Widget angezeigt. Ohne Angabe erscheint kein Link.
-              </p>
-              <input
-                type="url"
-                value={privacyUrl}
-                onChange={(e) => setPrivacyUrl(e.target.value)}
-                placeholder="https://ihre-website.de/datenschutz"
-                className="mt-1.5 w-full rounded-xl border border-input bg-background px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-ring"
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium">Link zu Ihren AGB</label>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Dieser Link wird im EstateAI-Widget angezeigt. Verwenden Sie die AGB-Seite Ihres
-                Unternehmens.
-              </p>
-              <input
-                type="text"
-                inputMode="url"
-                value={termsUrl}
-                onChange={(e) => setTermsUrl(e.target.value)}
-                placeholder="https://www.ihre-maklerseite.de/agb"
-                className="mt-1.5 w-full rounded-xl border border-input bg-background px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-ring"
-              />
-            </div>
-          </div>
-        </div>
-        <button
-          type="submit"
-          disabled={busy || !company}
-          className="rounded-xl bg-primary text-primary-foreground px-5 py-2.5 text-sm font-medium hover:bg-secondary disabled:opacity-50"
-        >
-          {busy ? "Speichern…" : "Änderungen speichern"}
-        </button>
-      </form>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Ungespeicherte Änderungen</AlertDialogTitle>
+            <AlertDialogDescription>
+              Du hast ungespeicherte Änderungen. Möchtest du die Seite wirklich verlassen?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => blocker.reset?.()}>Abbrechen</AlertDialogCancel>
+            <AlertDialogAction onClick={() => blocker.proceed?.()}>Verlassen</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

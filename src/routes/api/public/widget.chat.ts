@@ -10,6 +10,8 @@ import { createAnthropicProvider } from "@/lib/ai-gateway.server";
 import { buildSystemPrompt } from "@/lib/chat-prompt";
 import { responseTimePhrase } from "@/lib/response-time";
 import { isPlusAddressed, normalizeEmail } from "@/lib/validate-email";
+import { isCompanyAllowedToUseWidget } from "@/lib/billing/widget-access";
+import { DEMO_COMPANY_ID } from "@/lib/demo-company";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -18,7 +20,6 @@ const corsHeaders = {
 };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const DEMO_COMPANY_ID = "00000000-0000-0000-0000-000000000000";
 const MAX_MESSAGES = 50;
 const MAX_CHARS_PER_MSG = 4000;
 const USER_DATA_MARKER_RE = /<<DATA>>|<<END>>/gi;
@@ -33,59 +34,10 @@ const SESSION_LIMIT_TEXT =
   "Danke, ich habe die wichtigsten Informationen aufgenommen. Für die Demo ist dieses Gespräch jetzt begrenzt. Das Immobilienbüro kann sich mit Ihnen in Verbindung setzen.";
 
 // ---- 14-Tage-Demo / Abo-Status ----
-type CompanyAccess = {
-  id: string;
-  subscription_status: string | null;
-  demo_expires_at: string | null;
-  subscription_expires_at: string | null;
-};
-type AccessResult =
-  | { allowed: true }
-  | {
-      allowed: false;
-      code: "DEMO_EXPIRED" | "SUBSCRIPTION_EXPIRED" | "ACCOUNT_INACTIVE";
-      message: string;
-    };
-
-function isCompanyAllowedToUseWidget(company: CompanyAccess): AccessResult {
-  const status = company.subscription_status;
-  if (status === null || status === undefined) {
-    return { allowed: true };
-  }
-  if (status === "active") {
-    // No subscription_expires_at set = explicitly unlimited (never blocks).
-    // Set and in the past = the subscription has actually lapsed, even
-    // though the status was never manually flipped away from "active".
-    const expires = company.subscription_expires_at
-      ? new Date(company.subscription_expires_at)
-      : null;
-    if (!expires || expires.getTime() > Date.now()) {
-      return { allowed: true };
-    }
-    return {
-      allowed: false,
-      code: "SUBSCRIPTION_EXPIRED",
-      message: "Das Abonnement ist abgelaufen. Bitte kontaktieren Sie den Anbieter.",
-    };
-  }
-  if (status === "trial") {
-    const expires = company.demo_expires_at ? new Date(company.demo_expires_at) : null;
-    if (expires && expires.getTime() > Date.now()) {
-      return { allowed: true };
-    }
-    return {
-      allowed: false,
-      code: "DEMO_EXPIRED",
-      message: "Die 14-tägige EstateAI-Demo ist abgelaufen. Bitte kontaktieren Sie den Anbieter.",
-    };
-  }
-  // "expired" | "paused" | "cancelled" | jeder unbekannte Wert
-  return {
-    allowed: false,
-    code: "ACCOUNT_INACTIVE",
-    message: "Dieses EstateAI-Widget ist aktuell nicht aktiv.",
-  };
-}
+// isCompanyAllowedToUseWidget now lives in @/lib/billing/widget-access —
+// same response shape (error codes, German messages), but the allow/block
+// decision now comes from the single shared subscription engine used
+// everywhere else (dashboard, Embed tab, lead-summary guard, billing tab).
 
 function fixedAssistantReply(text: string) {
   const stream = createUIMessageStream({
@@ -269,28 +221,24 @@ export const Route = createFileRoute("/api/public/widget/chat")({
           }
 
           await Promise.all([
-            supabaseAdmin
-              .from("widget_throttle")
-              .upsert(
-                {
-                  company_id: company.id,
-                  bucket_key: "daily",
-                  minute_bucket: dayBucket,
-                  count: dailyCount + 1,
-                },
-                { onConflict: "company_id,bucket_key,minute_bucket" },
-              ),
-            supabaseAdmin
-              .from("widget_throttle")
-              .upsert(
-                {
-                  company_id: company.id,
-                  bucket_key: sessionBucketKey,
-                  minute_bucket: dayBucket,
-                  count: sessionCount + 1,
-                },
-                { onConflict: "company_id,bucket_key,minute_bucket" },
-              ),
+            supabaseAdmin.from("widget_throttle").upsert(
+              {
+                company_id: company.id,
+                bucket_key: "daily",
+                minute_bucket: dayBucket,
+                count: dailyCount + 1,
+              },
+              { onConflict: "company_id,bucket_key,minute_bucket" },
+            ),
+            supabaseAdmin.from("widget_throttle").upsert(
+              {
+                company_id: company.id,
+                bucket_key: sessionBucketKey,
+                minute_bucket: dayBucket,
+                count: sessionCount + 1,
+              },
+              { onConflict: "company_id,bucket_key,minute_bucket" },
+            ),
           ]);
 
           // ---- Rate limit (anti-spam / anti credit-abuse) ----
@@ -306,17 +254,15 @@ export const Route = createFileRoute("/api/public/widget/chat")({
             .eq("minute_bucket", minuteBucket)
             .maybeSingle();
           const nextCount = (existingThrottle?.count ?? 0) + 1;
-          await supabaseAdmin
-            .from("widget_throttle")
-            .upsert(
-              {
-                company_id: company.id,
-                bucket_key: bucketKey,
-                minute_bucket: minuteBucket,
-                count: nextCount,
-              },
-              { onConflict: "company_id,bucket_key,minute_bucket" },
-            );
+          await supabaseAdmin.from("widget_throttle").upsert(
+            {
+              company_id: company.id,
+              bucket_key: bucketKey,
+              minute_bucket: minuteBucket,
+              count: nextCount,
+            },
+            { onConflict: "company_id,bucket_key,minute_bucket" },
+          );
           if (nextCount > PER_MINUTE_LIMIT) {
             return new Response(
               JSON.stringify({ error: "Zu viele Anfragen. Bitte einen Moment warten." }),
