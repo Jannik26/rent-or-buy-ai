@@ -28,6 +28,31 @@ function AuthPage() {
     });
   }, [navigate]);
 
+  // Google OAuth redirects back here (redirectTo is set to this same page,
+  // never /dashboard — that avoids losing error state to the _authenticated
+  // guard's blind redirect, and can never loop since /auth never redirects
+  // to itself). On success the effect above picks up the new session. On
+  // failure/cancellation GoTrue appends error/error_description either as a
+  // query string or a hash fragment depending on flow type — check both,
+  // same pattern already used for the password-recovery link below/in
+  // routes/index.tsx. Runs once on mount only; the URL is cleaned
+  // immediately after so a reload never re-shows a stale error.
+  useEffect(() => {
+    const hash = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : "";
+    const hashParams = new URLSearchParams(hash);
+    const searchParams = new URLSearchParams(window.location.search);
+    const error = hashParams.get("error") ?? searchParams.get("error");
+    if (!error) return;
+    const description =
+      hashParams.get("error_description") ?? searchParams.get("error_description");
+    const message =
+      error === "access_denied"
+        ? "Die Google-Anmeldung wurde abgebrochen."
+        : (description?.replace(/\+/g, " ") ?? "Die Google-Anmeldung ist fehlgeschlagen.");
+    toast.error(message);
+    window.history.replaceState(null, "", window.location.pathname);
+  }, []);
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     const normalizedEmail = normalizeEmail(email);
@@ -73,7 +98,9 @@ function AuthPage() {
     setBusy(true);
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: { redirectTo: `${window.location.origin}/dashboard` },
+      // Redirect back to this same page, not /dashboard — see the error-
+      // handling effect above for why.
+      options: { redirectTo: `${window.location.origin}/auth` },
     });
     if (error) {
       toast.error(error.message || "Google-Anmeldung fehlgeschlagen");
