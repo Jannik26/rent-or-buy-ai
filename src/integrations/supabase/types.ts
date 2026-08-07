@@ -4,7 +4,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.5";
+    PostgrestVersion: "14.15";
   };
   public: {
     Tables: {
@@ -46,6 +46,63 @@ export type Database = {
           },
         ];
       };
+      appointments: {
+        Row: {
+          company_id: string;
+          created_at: string;
+          created_by: string | null;
+          ends_at: string | null;
+          id: string;
+          lead_id: string;
+          location: string | null;
+          notes: string | null;
+          starts_at: string;
+          status: string;
+          updated_at: string;
+        };
+        Insert: {
+          company_id: string;
+          created_at?: string;
+          created_by?: string | null;
+          ends_at?: string | null;
+          id?: string;
+          lead_id: string;
+          location?: string | null;
+          notes?: string | null;
+          starts_at: string;
+          status?: string;
+          updated_at?: string;
+        };
+        Update: {
+          company_id?: string;
+          created_at?: string;
+          created_by?: string | null;
+          ends_at?: string | null;
+          id?: string;
+          lead_id?: string;
+          location?: string | null;
+          notes?: string | null;
+          starts_at?: string;
+          status?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "appointments_company_id_fkey";
+            columns: ["company_id"];
+            isOneToOne: false;
+            referencedRelation: "companies";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "appointments_lead_id_fkey";
+            columns: ["lead_id"];
+            isOneToOne: false;
+            referencedRelation: "leads";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       companies: {
         Row: {
           admin_notes: string | null;
@@ -62,7 +119,7 @@ export type Database = {
           response_time: string;
           subscription_expires_at: string | null;
           subscription_started_at: string | null;
-          subscription_status: string | null;
+          subscription_status: string;
           terms_url: string | null;
           updated_at: string;
         };
@@ -81,7 +138,7 @@ export type Database = {
           response_time?: string;
           subscription_expires_at?: string | null;
           subscription_started_at?: string | null;
-          subscription_status?: string | null;
+          subscription_status?: string;
           terms_url?: string | null;
           updated_at?: string;
         };
@@ -100,7 +157,7 @@ export type Database = {
           response_time?: string;
           subscription_expires_at?: string | null;
           subscription_started_at?: string | null;
-          subscription_status?: string | null;
+          subscription_status?: string;
           terms_url?: string | null;
           updated_at?: string;
         };

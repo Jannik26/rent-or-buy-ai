@@ -1,6 +1,7 @@
 # EstateAI — Roadmap & Architekturplan
 
-**Stand: 2026-08-07 · Korrekturrunde 1 · Kanonisches Planungsdokument.**
+**Stand: 2026-08-07 · Korrekturrunde 1 + Product-Track-Slice 1
+(Appointments) · Kanonisches Planungsdokument.**
 
 Dieses Dokument ersetzt `.lovable/plan.md` als laufende Roadmap. Es wird bei
 jeder größeren strategischen oder architektonischen Entscheidung aktualisiert
@@ -86,8 +87,8 @@ Branch/Kontext; **Integration in EstateAI selbst** ist PLANNED)
 | Kauf/Miete/Verkauf/Bewertung-Flow | ✅ DONE | 5 Intents (`kauf`,`verkauf`,`bewertung`,`miete`,`sonstiges`) in `chat-prompt.ts`/`widget.chat.ts`, erweiterte Slot-Extraktion |
 | Lead Scoring | ✅ DONE | Regelbasiert (`scoreFromData`) + KI-strukturierte Zusammenfassung (`lead-summary.server.ts`), 0–100, hot/warm/cold, nachvollziehbare Punktevergabe |
 | Lead Summary (KI) | ✅ DONE | Auto-Trigger ab 3 Nutzer-Nachrichten + Kontakt, Zod-validiertes Schema (`lead-summary-schema.ts`), „erfinde keine Werte" im Prompt |
-| Termin-Funktion | 🟡 PARTIAL | Nur `status='termin'`-Flag auf `leads`, keine eigene `appointments`-Tabelle, kein Datum/Uhrzeit-Feld, kein Kalender, keine Erinnerungen |
-| Termin Undo | ✅ DONE | `leads/$leadId.tsx::toggleTermin` mit Undo-Toast |
+| Termin-Funktion | ✅ DONE (2026-08-07, Product-Track-Slice 1) | Kanonische `appointments`-Tabelle (`company_id`/`lead_id`, `starts_at`/`ends_at`, `status` scheduled/completed/cancelled, RLS analog `leads`/`companies`, company_id server-seitig per Trigger aus `lead_id` abgeleitet, nie Client-Input vertraut). `leads.status='termin'` bleibt als synchronisiertes Legacy-Flag erhalten (Rückwärtskompatibilität zu AI-Chat-gesetztem Status ohne Datum). Lead-Detail-UI und `/appointments`-Seite an echte Daten angebunden. **Noch nicht enthalten** (bewusst außerhalb dieses Slices): Erinnerungen, Kalenderintegration/-Sync, Automatisierungen — bleiben Phase B/F |
+| Termin Undo | ✅ DONE | `leads/$leadId.tsx` — Termin anlegen/stornieren/reaktivieren jeweils mit Undo-Toast, jetzt auf echten `appointments`-Zeilen statt nur auf `leads.status` |
 | Mobile Navigation | ✅ DONE | `app-sidebar.tsx::MobileNav` |
 | Klickbare Stat Cards | ✅ DONE | `dashboard.tsx::StatCard` als `Link` mit Such-Params |
 | Klickbare Lead Rows | ✅ DONE | `dashboard.tsx`/`leads/index.tsx` |
@@ -243,7 +244,8 @@ Kanäle hinweg.
 
 ```
 Lead kommt rein → EstateAI qualifiziert (✅ heute) → Scoring (✅ heute)
-→ Termin (🟡 heute nur Status-Flag) → Kommunikation (⏳ Omnichannel geplant)
+→ Termin (✅ seit 2026-08-07 echte `appointments`-Daten, noch ohne
+Erinnerungen/Kalender-Sync) → Kommunikation (⏳ Omnichannel geplant)
 → Aufgaben (⏳) → Follow-up (⏳) → Bewerbung/Interessentenprozess (⏳)
 → Abschluss (⏳ kein Deal-Status) → Analytics (⏳ nur UI-Hülle)
 ```
@@ -255,8 +257,10 @@ Immobilie entdecken (⏳) → verstehen (⏳) → EstateAI versteht Objekt +
 Nutzerkriterien (⏳) → transparenten Match sehen (⏳) → Gesamtkosten sehen (⏳)
 → Pros/Cons (⏳) → andere Wohnungen vergleichen (⏳) → Grundriss öffnen
 (⏳, via Grizzly-Adapter) → eigene Möbel testen (⏳) → 3D ansehen (⏳) →
-Fragen stellen (✅ heute via Widget-Chat) → Besichtigung buchen (🟡 nur
-Status-Flag) → Unterlagen/Bewerbung (⏳) → Entscheidung
+Fragen stellen (✅ heute via Widget-Chat) → Besichtigung buchen (✅ seit
+2026-08-07 über echte `appointments`-Daten, aktuell nur maklerseitig
+bedienbar — kein Self-Service-Buchungsformular für Interessenten) →
+Unterlagen/Bewerbung (⏳) → Entscheidung
 ```
 
 Heute deckt EstateAI nur den Chat-/Erstkontakt-Teil beider Journeys ab. Der
@@ -328,12 +332,18 @@ Inhaltlich handelt es sich hierbei bereits um die ersten Punkte aus Phase B
 Abhängigkeit zum Production Track haben und deshalb zeitlich vorgezogen
 werden können, statt auf Phase A zu warten:
 
-- Eigene `appointments`-Tabelle (Datum/Uhrzeit statt nur Status-Flag) —
-  technisch unabhängig von Billing/Recht
+- ✅ **DONE (2026-08-07, Slice 1)** Eigene `appointments`-Tabelle (Datum/
+  Uhrzeit statt nur Status-Flag) — Migration, RLS (11/11 Tests grün, siehe
+  `supabase/tests/appointments_rls.sql`), zentrale Server-Function-Schicht
+  (`src/lib/appointments/`), Lead-Detail- und `/appointments`-UI
+  angebunden. `leads.status='termin'` bleibt als Legacy-Signal synchron
+  bestehen (siehe Abschnitt 2). Erinnerungen/Kalender-Sync bewusst nicht
+  Teil dieses Slices.
 - Conversations-Ansicht mit echter Datenanbindung — UI-Hülle existiert
   bereits (`conversations.tsx`), reine Produktarbeit
 - Analytics-Dashboard mit echten Daten — UI-Hülle existiert bereits
-  (`analytics.tsx`), reine Produktarbeit
+  (`analytics.tsx`), reine Produktarbeit. Die neue `appointments`-Tabelle
+  liefert dafür bereits die kanonischen Felder (siehe Abschnitt 7 unten)
 - Lead-Pipeline-Verbesserungen, weitere Maklerfunktionen
 - Beginn von Phase C (Matching/Vergleich/Kosten) kann parallel geplant
   werden, sobald das Immobilien-Datenmodell (Abschnitt 7) steht
@@ -351,10 +361,11 @@ Unit-Tests, keine E2E-Tests im Repo).
 
 ### Phase B — Brokerage Core
 
-- `appointments`-Tabelle, Analytics-Dashboard und Conversations-Ansicht mit
-  echten Daten — siehe Phase A Product Track oben (identische Punkte,
-  dort bewusst vorgezogen, hier nicht doppelt geplant)
-- Erinnerungen für Termine (Ausbau der `appointments`-Tabelle)
+- `appointments`-Tabelle ✅ DONE, Analytics-Dashboard und Conversations-
+  Ansicht mit echten Daten noch offen — siehe Phase A Product Track oben
+  (identische Punkte, dort bewusst vorgezogen, hier nicht doppelt geplant)
+- Erinnerungen für Termine, Kalenderintegration (Ausbau der bestehenden
+  `appointments`-Tabelle — Datenmodell ist dafür bereits vorbereitet)
 - Immobilien-/Interessenten-Matching (setzt Immobilien-Datenmodell voraus —
   existiert heute nicht; Leads referenzieren keine konkrete Immobilie)
 - Automatisierte, begrenzte Follow-ups (max. 3, siehe CLAUDE.md-Regel)
@@ -446,10 +457,28 @@ Grizzly Home, sondern:
 
 ## 7. Datenmodell — Planungsnotizen (keine Migrationen in diesem Schritt)
 
-Bestehendes Schema (verifiziert): `companies`, `leads`, `profiles`,
-`user_roles`, `widget_throttle`, `system_events`, `admin_audit_log`.
-**Kein** `agents`, `widgets`, `properties`/`immobilien`,
-`conversation_threads`, `appointments` als eigene Tabellen.
+Bestehendes Schema (verifiziert, Stand 2026-08-07): `companies`, `leads`,
+`profiles`, `user_roles`, `widget_throttle`, `system_events`,
+`admin_audit_log`, **`appointments`** (✅ neu, Product-Track-Slice 1 — siehe
+unten). **Kein** `agents`, `widgets`, `properties`/`immobilien`,
+`conversation_threads` als eigene Tabellen.
+
+**`appointments` (✅ DONE, 2026-08-07):** `id`, `company_id` (server-seitig
+per Trigger aus `lead_id` abgeleitet, nie Client-Input), `lead_id`,
+`starts_at`/`ends_at`, `status` (`scheduled`/`completed`/`cancelled`, text
++ check statt enum — analog `companies.subscription_status`),
+`location`/`notes`, `created_by`, `created_at`/`updated_at`. RLS
+owner-scoped analog `leads`/`companies`, kein anon-Zugriff. Partial-Unique-
+Index erzwingt max. einen `scheduled`-Termin pro Lead, erlaubt aber volle
+Historie (`completed`/`cancelled`) — das sind bereits die kanonischen
+Felder für die künftige Analytics-Phase (Anzahl geplanter Termine, Termine
+pro Zeitraum, Lead→Termin-Conversion, completed/cancelled-Quote). RLS mit
+11 Assertions gegen die echte Projekt-DB verifiziert, siehe
+`supabase/tests/appointments_rls.sql`. `leads.status='termin'` bleibt als
+synchronisiertes Legacy-Signal bestehen (u. a. weil der Widget-Chat direkt
+`status='termin'` setzen kann, ohne ein Datum zu kennen — siehe
+`widget.chat.ts` `ALLOWED_STATUS`); die `/appointments`-Seite zeigt solche
+undatierten Fälle separat, statt sie zu verstecken.
 
 Für kommende Phasen wahrscheinlich nötig (grobe Skizze, vor Umsetzung im
 Detail zu planen):
@@ -458,7 +487,6 @@ Detail zu planen):
 |---|---|---|---|---|
 | `agents` | B (RE/MAX-Vorbereitung) | `company_id` | Owner + Agent-Self-Access | `leads.agent_id` optional nachziehbar, ohne Breaking Change |
 | `widgets` | B | `company_id` (+ optional `agent_id`) | wie companies | mehrere Widget-Einbindungen pro Firma |
-| `appointments` | B | über `lead_id`→`company_id` | wie leads | Datum/Uhrzeit, Status, Reminder-Zeitpunkt |
 | `properties`/`immobilien` | C | `company_id` | wie leads | strukturierte Objektattribute statt Freitext; Basis für Matching |
 | `search_criteria`/`match_profiles` | C | Interessent (Auth-Modell TBD, siehe Risiko 6 in Abschnitt 9) | eigenes RLS-Modell nötig, da Interessenten heute keine Accounts haben | Muss/Kann-Gewichtung, spätere Pendel-/Lagefaktoren als optionale Kriterien |
 | `furniture_items` ("Meine Möbel") | D | Interessent | wie oben | Pflichtfelder: Name, Kategorie, Breite, Tiefe, Höhe. Optional (später): Foto, 3D-Asset, Material/Farbe, Demontierbarkeit |
@@ -534,26 +562,33 @@ Kriterien zurückführbar sein (siehe Beispiel in Phase C).
    `agent_id` kann additiv ergänzt werden (keine Breaking Changes nötig,
    bestehendes Muster aus den letzten Migrationen — additive
    `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` — ist dafür bereits etabliert).
-8. **E2E-Testing-Lücke** — nur Unit-Tests (136, alle grün) vorhanden, keine
-   Browser-/E2E-Tests im Repo persistiert. Für einen produktionsreifen
-   Demo-Flow-Schutz (CLAUDE.md-Priorität #1) mittelfristig relevant,
-   Production-Track-Arbeit.
+8. **E2E-Testing-Lücke** — 157 Unit-Tests (alle grün), plus für Slice 1
+   (Appointments) ein manueller, gegen die echte Projekt-DB verifizierter
+   RLS-Testlauf (`supabase/tests/appointments_rls.sql`, 11/11 Assertions)
+   und ein teilweiser Browser-Durchlauf (Signup bis zur E-Mail-Bestätigung
+   erfolgreich; die eigentliche eingeloggte Klickstrecke war durch die
+   E-Mail-Bestätigungspflicht in dieser Session blockiert, siehe
+   Session-Protokoll). Weiterhin: **kein** wiederholbares, im Repo
+   persistiertes Browser-/E2E-Testartefakt (z. B. Playwright). Für einen
+   produktionsreifen Demo-Flow-Schutz (CLAUDE.md-Priorität #1) mittelfristig
+   relevant, Production-Track-Arbeit.
 
 ---
 
 ## 10. Empfehlung: nächster Schritt
 
-**Nicht Teil dieses Auftrags** (siehe Scope), aber als Empfehlung für die
-nächste Session — bewusst als **parallele Tracks statt starrer Kette**
-formuliert, da keine echte technische Abhängigkeit zwischen Recht/Billing
-und Produktentwicklung besteht:
+**Update 2026-08-07:** Der erste Product-Track-Schritt (`appointments`-
+Tabelle, siehe Abschnitt 2 und 7) ist umgesetzt, getestet und commitet.
+Rest dieses Abschnitts bleibt als Empfehlung für die **weiteren** Schritte
+stehen — weiterhin **nicht** Teil eines bereits erteilten Auftrags, außer
+explizit bestätigt:
 
 **Kann sofort parallel starten (keine Abhängigkeiten untereinander):**
 
-- *Product Track:* eigene `appointments`-Tabelle (Datum/Uhrzeit),
-  Conversations-Ansicht mit echten Daten befüllen, Analytics-Dashboard mit
-  echten Daten befüllen — alle drei nutzen ausschließlich bestehende
-  `leads`/`companies`-Daten
+- *Product Track:* Conversations-Ansicht mit echten Daten befüllen,
+  Analytics-Dashboard mit echten Daten befüllen (inkl. der neuen
+  Termin-Kennzahlen aus `appointments`, siehe Abschnitt 7) — beide nutzen
+  ausschließlich bestehende `leads`/`companies`/`appointments`-Daten
 - *Production Track:* Rechtstexte (Impressum/Datenschutz) mit echten
   Angaben füllen — kleinster Aufwand, größtes Compliance-Risiko wenn offen
 - *Konzeptarbeit:* Immobilien-Datenmodell (Phase C, `properties`-Entität)
@@ -571,12 +606,13 @@ und Produktentwicklung besteht:
 
 - Rechtstexte-Platzhalter
 - DSGVO-Löschjob-Durchsetzung
-- E2E-Testabdeckung als persistiertes Artefakt
+- E2E-Testabdeckung als persistiertes Artefakt (Playwright o. ä. — auch für
+  Slice 1 noch offen, siehe Risiko 8)
 
 Konkreter nächster Schritt, wenn nur **einer** gewählt werden soll:
-**`appointments`-Tabelle + Analytics/Conversations mit echten Daten**
-(Product Track) — größter sichtbarer Fortschritt, keine Abhängigkeiten,
-UI-Hüllen sind bereits vorbereitet.
+**Analytics-Dashboard mit echten Daten** (Product Track) — UI-Hülle ist
+bereits vorbereitet, Datenbasis (`leads`, jetzt auch `appointments`) steht;
+Conversations-Ansicht ist der naheliegende zweite Kandidat direkt danach.
 
 Diese Empfehlung wird hier **nicht automatisch umgesetzt** — das ist die
 nächste, separat zu bestätigende Aufgabe.

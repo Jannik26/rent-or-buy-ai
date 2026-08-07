@@ -61,10 +61,11 @@ const adminUpdateCompanySchema = z
   .object({
     companyId: z.string().regex(UUID_RE),
     action: z.string().min(1).max(120),
-    subscription_status: z
-      .enum(["trial", "active", "expired", "paused", "cancelled"])
-      .nullable()
-      .optional(),
+    // Not `.nullable()`, unlike the other fields below: companies.subscription_status
+    // has been NOT NULL (default 'trial') since the subscription_data_hardening
+    // migration — the generated Supabase types now correctly reject `null` here.
+    // Omit the field entirely (still `.optional()`) to leave it unchanged.
+    subscription_status: z.enum(["trial", "active", "expired", "paused", "cancelled"]).optional(),
     plan: z.enum(["basic", "professional", "enterprise"]).nullable().optional(),
     demo_started_at: z.string().datetime().nullable().optional(),
     demo_expires_at: z.string().datetime().nullable().optional(),

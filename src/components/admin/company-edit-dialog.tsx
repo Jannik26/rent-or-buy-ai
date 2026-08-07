@@ -97,7 +97,11 @@ export function CompanyEditDialog({
   function handleFormSave() {
     submit(
       {
-        subscription_status: status || null,
+        // Not `|| null`, unlike the nullable fields below: subscription_status
+        // is NOT NULL in the DB (see admin.functions.ts), so an empty
+        // dropdown selection now means "leave unchanged" (omit the field via
+        // `undefined`) rather than an invalid attempt to null it out.
+        subscription_status: status || undefined,
         plan: plan || null,
         demo_started_at: fromLocalInputValue(demoStartedAt),
         demo_expires_at: fromLocalInputValue(demoExpiresAt),
