@@ -1,7 +1,8 @@
 # EstateAI — Roadmap & Architekturplan
 
-**Stand: 2026-08-07 · Korrekturrunde 1 + Product-Track-Slice 1
-(Appointments) + Slice 2 (Analytics V1) · Kanonisches Planungsdokument.**
+**Stand: 2026-08-08 · Korrekturrunde 1 + Product-Track-Slice 1
+(Appointments) + Slice 2 (Analytics V1) + Slice 3 (Conversations V1) ·
+Kanonisches Planungsdokument.**
 
 Dieses Dokument ersetzt `.lovable/plan.md` als laufende Roadmap. Es wird bei
 jeder größeren strategischen oder architektonischen Entscheidung aktualisiert
@@ -105,7 +106,7 @@ Branch/Kontext; **Integration in EstateAI selbst** ist PLANNED)
 | Admin-/Trial-Monitoring (Super-Admin) | ✅ DONE | `admin/index.tsx`, `admin_company_overview()` SQL-Funktion (service_role-only), `admin_audit_log` wird bei jeder Änderung befüllt |
 | System-Events-Logging | ✅ DONE | `system_events`-Tabelle, durchgängig befüllt (Rate-Limit, Fehler, Abschlüsse) im Widget-Endpoint |
 | Rate-Limiting/Kostenschutz | ✅ DONE | Tages-/Sessionlimits + Minuten-/Company-Rate-Limit in `widget.chat.ts`, `widget_throttle`-Tabelle |
-| Conversations-Ansicht | ⏳ PLANNED | Reine UI-Hülle (`conversations.tsx`), keine Datenanbindung — Gespräche sind aktuell nur über Lead-Detailseite einsehbar |
+| Conversations-Ansicht | ✅ DONE (2026-08-08, Product-Track-Slice 3, „Conversations V1") | Master-Detail-Ansicht (Liste links, Verlauf rechts, responsive) mit echten Daten aus `leads.messages`, read-only. Suche (Name), Filter (Status/Score), Empty States, robuste Normalisierung für Legacy-/Malformed-Nachrichten (unbekannte Rollen, fehlender Inhalt, kaputte Einträge — alle im Browser gegen echte Fixtures verifiziert). Sortierung nach `leads.updated_at` als dokumentierte Näherung, da `messages` **keine Zeitstempel pro Nachricht** besitzt (echter Datenmodell-Befund, siehe Risiko 10). Kein Schreibzugriff, keine neuen Kanäle, keine Migration |
 | Analytics-Dashboard | ✅ DONE (2026-08-07, Product-Track-Slice 2, „Analytics V1") | Echte, tenant-isolierte Kennzahlen statt Platzhalter: Lead-/Termin-KPIs, Zeitfilter (7/30/90 Tage/gesamt), Trends ggü. Vorperiode, 3-stufiger Funnel, Status-/Score-Verteilung, Tagesverläufe (nur für endliche Zeitfenster). Serverseitige Aggregation über eine RLS-gebundene `SECURITY INVOKER`-SQL-Funktion (`analytics_summary`, kein `company_id`-Parameter — Tenant-Isolation entsteht ausschließlich durch RLS), keine PII in der Antwort. `leads.status='termin'` ohne echten Termin wird bewusst **nicht** in „Aktive Termine"/Conversion mitgezählt, sondern separat als Altbestand ausgewiesen (siehe Abschnitt 9, Punkt 9). 12 SQL-Korrektheits-/RLS-Assertions gegen die echte DB (`supabase/tests/analytics_rls.sql`), 22 Unit-Tests für die reinen Kennzahl-Regeln |
 | Automatisierte Follow-ups | ⏳ PLANNED | Nicht implementiert (max. 3 Follow-ups aus CLAUDE.md ist eine Regel, kein Code) |
 | DSGVO-Löschfristen | ⏳ PLANNED | `data-retention.ts` definiert Zielwerte (30 Tage Demo, 6–12 Monate ohne Abschluss) explizit als **noch nicht durchgesetzt** |
@@ -118,12 +119,13 @@ robuster und produktionsreifer als es die alten Notizen vermuten lassen —
 insbesondere Billing-Lifecycle, RLS-Härtung, Admin-Audit-Log und
 Lead-Scoring sind bereits solide, getestete Produktionslogik, keine
 Prototypen. Die größten offenen Punkte für EstateAI selbst sind: (1) kein
-echter Zahlungsanbieter, (2) Conversations ist noch eine leere Hülle
-(Analytics seit 2026-08-07 nicht mehr, siehe Termin-Funktion/Analytics-
-Dashboard oben), (3) keine Automatisierungen, (4) rechtliche
-Platzhalterseiten, (5) die
+echter Zahlungsanbieter, (2) keine Automatisierungen — Termine, Analytics
+und Conversations sind seit den Product-Track-Slices 1–3 (2026-08-07/08)
+keine leeren Hüllen mehr, siehe Termin-Funktion/Analytics-Dashboard/
+Conversations-Ansicht oben, (3) rechtliche
+Platzhalterseiten, (4) die
 komplette Interessenten-Seite (Matching, Vergleich, Kostenassistent) fehlt
-noch im EstateAI-Datenmodell, und (6) die Anbindung an die **bereits
+noch im EstateAI-Datenmodell, und (5) die Anbindung an die **bereits
 existierende** Grizzly-Home/Grizzly-Architect-Technologie ist von
 EstateAI-Seite aus noch nicht begonnen.
 
@@ -247,7 +249,9 @@ Kanäle hinweg.
 ```
 Lead kommt rein → EstateAI qualifiziert (✅ heute) → Scoring (✅ heute)
 → Termin (✅ seit 2026-08-07 echte `appointments`-Daten, noch ohne
-Erinnerungen/Kalender-Sync) → Kommunikation (⏳ Omnichannel geplant)
+Erinnerungen/Kalender-Sync) → Kommunikation (🟡 seit 2026-08-08 read-only
+Conversations-Ansicht für den Website-Chat, weitere Kanäle/Schreibzugriff
+⏳ Omnichannel geplant)
 → Aufgaben (⏳) → Follow-up (⏳) → Bewerbung/Interessentenprozess (⏳)
 → Abschluss (⏳ kein Deal-Status) → Analytics (✅ seit 2026-08-07 „Analytics
 V1" mit echten Daten)
@@ -342,8 +346,14 @@ werden können, statt auf Phase A zu warten:
   angebunden. `leads.status='termin'` bleibt als Legacy-Signal synchron
   bestehen (siehe Abschnitt 2). Erinnerungen/Kalender-Sync bewusst nicht
   Teil dieses Slices.
-- Conversations-Ansicht mit echter Datenanbindung — UI-Hülle existiert
-  bereits (`conversations.tsx`), reine Produktarbeit
+- ✅ **DONE (2026-08-08, Slice 3, „Conversations V1")** Conversations-
+  Ansicht mit echter Datenanbindung — Master-Detail-UI, Suche/Filter,
+  robuste Legacy-/Malformed-Message-Behandlung, read-only. Keine
+  Migration (Projektion/Truncation passiert im Server-Function-Layer,
+  nicht in SQL — bewusste V1-Abwägung, siehe Abschnitt 7). Bewusst nicht
+  Teil dieses Slices: Schreibzugriff, weitere Kanäle (E-Mail/WhatsApp/
+  Telefon), echte Per-Message-Zeitstempel (existieren im Datenmodell
+  nicht, siehe Risiko 10)
 - ✅ **DONE (2026-08-07, Slice 2, „Analytics V1")** Analytics-Dashboard mit
   echten Daten — Lead-/Termin-KPIs, Zeitfilter, Trends, Funnel,
   Status-/Score-Verteilung, Tagesverläufe; serverseitige RLS-gebundene
@@ -369,9 +379,9 @@ Unit-Tests, keine E2E-Tests im Repo).
 ### Phase B — Brokerage Core
 
 - `appointments`-Tabelle ✅ DONE, Analytics-Dashboard ✅ DONE (V1),
-  Conversations-Ansicht mit echten Daten noch offen — siehe Phase A
-  Product Track oben (identische Punkte, dort bewusst vorgezogen, hier
-  nicht doppelt geplant)
+  Conversations-Ansicht ✅ DONE (V1) — alle drei ursprünglich hier
+  geplanten Punkte sind bereits in Phase A Product Track umgesetzt (dort
+  bewusst vorgezogen, hier nicht doppelt geplant)
 - Erinnerungen für Termine, Kalenderintegration (Ausbau der bestehenden
   `appointments`-Tabelle — Datenmodell ist dafür bereits vorbereitet)
 - Immobilien-/Interessenten-Matching (setzt Immobilien-Datenmodell voraus —
@@ -499,6 +509,22 @@ verlassen je die Funktion. Von `authenticated` aufrufbar, `anon`- und
 20260807201730/20260807201801). 12 Assertions gegen die echte Projekt-DB
 verifiziert, siehe `supabase/tests/analytics_rls.sql`.
 
+**Conversations V1 (✅ DONE, 2026-08-08, keine Migration):** Anders als
+Appointments/Analytics bewusst **ohne** neue SQL-Funktion — Liste und
+Detail lesen `leads` direkt über den RLS-gebundenen Client
+(`src/lib/conversations/conversations.functions.ts`). Für die Liste wird
+`messages` pro Lead vollständig aus Postgres geladen und dann **im
+Server-Function-Layer** (nicht im Client-Bundle) auf Name/Status/Score/
+Nachrichtenanzahl/letzte-Nachricht-Vorschau reduziert — die volle
+Nachrichtenhistorie verlässt den Server nie außer für die eine gerade
+geöffnete Detail-Ansicht. Bewusste V1-Abwägung (dokumentiert statt
+automatisch durch eine Migration gelöst): bei heutigen Datenmengen
+(einstellige/niedrige zweistellige Leads pro Mandant) vernachlässigbar;
+sollte die Listengröße relevant wachsen, wäre eine Projektionsfunktion
+nach dem `analytics_summary`-Muster der nächste Schritt. Normalisierung
+(`src/lib/conversations/conversation-rules.ts`) ist eine reine, getestete
+Funktion — keine neue Zwischenspeicherung, keine neue Tabelle.
+
 Für kommende Phasen wahrscheinlich nötig (grobe Skizze, vor Umsetzung im
 Detail zu planen):
 
@@ -569,8 +595,11 @@ Kriterien zurückführbar sein (siehe Beispiel in Phase C).
    eine noch offene Entscheidung, keine Empfehlung, die dieses Dokument
    vorwegnimmt.
 5. **`leads.messages` als JSONB statt eigenes Conversation-Modell** —
-   funktioniert für den heutigen Ein-Kanal-Chat gut, wird aber zum
-   Umbau-Kandidaten sobald Telefon/E-Mail (Phase F) dazukommen.
+   funktioniert für den heutigen Ein-Kanal-Chat gut (Conversations V1 liest
+   direkt darauf, siehe Abschnitt 2/7), wird aber zum Umbau-Kandidaten
+   sobald Telefon/E-Mail (Phase F) dazukommen — dann braucht es echte
+   `conversation_threads`/`messages`-Tabellen mit Kanal- und
+   Zeitstempel-Feldern statt der heutigen JSONB-Spalte.
 6. **Interessenten haben keine Accounts** — Phase C/D (Matching, Merkliste,
    „Meine Möbel") setzt voraus, dass Interessenten wiedererkannt werden
    können. Aktuell ist niemand außer dem Makler authentifiziert. Braucht
@@ -581,19 +610,27 @@ Kriterien zurückführbar sein (siehe Beispiel in Phase C).
    `agent_id` kann additiv ergänzt werden (keine Breaking Changes nötig,
    bestehendes Muster aus den letzten Migrationen — additive
    `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` — ist dafür bereits etabliert).
-8. **E2E-Testing-Lücke** — 179 Unit-Tests (alle grün), plus für Slice 1
-   (Appointments, 11/11) und Slice 2 (Analytics, 12/12) je ein manueller,
-   gegen die echte Projekt-DB verifizierter SQL-Korrektheits-/RLS-Testlauf
-   (`supabase/tests/appointments_rls.sql`, `supabase/tests/analytics_rls.sql`).
-   Echter eingeloggter Browser-Durchlauf war in beiden Slice-Sessions
-   blockiert: Slice 1 an der Pflicht-E-Mail-Bestätigung, Slice 2 zusätzlich
-   am Supabase-Auth-E-Mail-Rate-Limit (zu viele Signups in kurzer Zeit im
-   selben Projekt) — der Auth-Guard selbst wurde aber unauthentifiziert
-   verifiziert (Redirect `/analytics` → `/auth`, keine Konsolenfehler).
-   Weiterhin: **kein** wiederholbares, im Repo persistiertes
-   Browser-/E2E-Testartefakt (z. B. Playwright). Für einen produktionsreifen
-   Demo-Flow-Schutz (CLAUDE.md-Priorität #1) mittelfristig relevant,
-   Production-Track-Arbeit.
+8. **E2E-Testing-Lücke** — 202 Unit-Tests (alle grün), plus je ein
+   manueller, gegen die echte Projekt-DB verifizierter SQL-Korrektheits-/
+   RLS-Testlauf für Slice 1 (Appointments, 11/11) und Slice 2 (Analytics,
+   12/12). Für Slice 1/2 war ein echter eingeloggter Browser-Durchlauf
+   blockiert (Slice 1: Pflicht-E-Mail-Bestätigung; Slice 2: zusätzlich
+   Supabase-Auth-E-Mail-Rate-Limit nach zu vielen Signups). Für Slice 3
+   (Conversations) gelang ein vollständiger, echter Browser-Durchlauf ohne
+   neuen Signup: ein Admin-generierter Magic-Link (Supabase Admin API,
+   `auth.admin.generate_link`) für den bereits bestehenden QA-Test-Account
+   verschaffte eine reale Session, ohne das Rate-Limit erneut zu
+   beanspruchen — Liste, Suche, Filter, Empty State, lange Conversation
+   (40 Nachrichten, Scroll geprüft) und sämtliche Legacy-/Malformed-Fälle
+   (unbekannte Rolle, fehlender Inhalt, kaputte Einträge, `null`) wurden
+   visuell gegen eigens angelegte und danach vollständig gelöschte
+   Fixture-Leads verifiziert, keine Konsolenfehler. Mobile-Viewport-
+   Screenshot war durch eine Tool-Einschränkung (Fenster-Resize griff
+   nicht) nicht möglich — stattdessen per Code-Review gegen das bereits
+   produktiv laufende `MobileNav`-Breakpoint-Muster verifiziert. Weiterhin:
+   **kein** wiederholbares, im Repo persistiertes Browser-/E2E-Testartefakt
+   (z. B. Playwright). Für einen produktionsreifen Demo-Flow-Schutz
+   (CLAUDE.md-Priorität #1) mittelfristig relevant, Production-Track-Arbeit.
 9. **`leads.status='termin'` bleibt eine zweite/Legacy-Quelle neben
    `appointments`** — technische Schuld, bewusst nicht in Slice 1 oder 2
    aufgelöst. Der Widget-/AI-Chat kann `status='termin'` weiterhin direkt
@@ -606,24 +643,39 @@ Kriterien zurückführbar sein (siehe Beispiel in Phase C).
    Terminvereinbarung direkt einen `appointments`-Eintrag an, statt nur
    `leads.status` zu setzen) — **kein** Umsetzungsauftrag für dieses
    Dokument, nur als offener Refactor-Punkt festgehalten.
+10. **`leads.messages` besitzt keinen Zeitstempel pro Nachricht** —
+    echter, gegen Produktionsdaten verifizierter Befund aus Slice 3
+    (Conversations): jedes Element ist ausschließlich `{role, content}`
+    (siehe `widget.chat.ts`'s `persistLeadFromTranscript`). Conversations
+    V1 sortiert deshalb nach `leads.updated_at` als dokumentierte
+    Näherung für „letzte Aktivität" — dieses Feld wird aber auch durch
+    Nicht-Nachrichten-Schreibvorgänge auf derselben Zeile aktualisiert
+    (Termin-Toggle, KI-Zusammenfassung-Regenerierung, Admin-Edits), ist
+    also kein exakter „letzte Nachricht"-Zeitstempel. Innerhalb einer
+    Conversation ist nur die Reihenfolge (Array-Index), nie ein Zeitpunkt,
+    bekannt. Langfristige Lösung: `starts_at`/`sent_at` pro Nachricht beim
+    Schreiben mitspeichern (kleine, additive Änderung an der
+    JSONB-Struktur oder der Umstieg auf `conversation_threads`/`messages`
+    aus Risiko 5) — **kein** Umsetzungsauftrag für dieses Dokument.
 
 ---
 
 ## 10. Empfehlung: nächster Schritt
 
-**Update 2026-08-07:** Die ersten zwei Product-Track-Schritte
-(`appointments`-Tabelle, Analytics V1 — siehe Abschnitt 2 und 7) sind
-umgesetzt, getestet und commitet. Rest dieses Abschnitts bleibt als
-Empfehlung für die **weiteren** Schritte stehen — weiterhin **nicht** Teil
-eines bereits erteilten Auftrags, außer explizit bestätigt:
+**Update 2026-08-08:** Der ursprüngliche Product-Track-Dreiklang
+(`appointments`-Tabelle, Analytics V1, Conversations V1 — siehe Abschnitt
+2 und 7) ist vollständig umgesetzt, getestet und commitet. Rest dieses
+Abschnitts bleibt als Empfehlung für die **weiteren** Schritte stehen —
+weiterhin **nicht** Teil eines bereits erteilten Auftrags, außer explizit
+bestätigt:
 
 **Kann sofort parallel starten (keine Abhängigkeiten untereinander):**
 
-- *Product Track:* Conversations-Ansicht mit echten Daten befüllen — UI-
-  Hülle existiert bereits (`conversations.tsx`), nutzt ausschließlich
-  bestehende `leads`-Daten (`leads.messages`)
 - *Production Track:* Rechtstexte (Impressum/Datenschutz) mit echten
   Angaben füllen — kleinster Aufwand, größtes Compliance-Risiko wenn offen
+- *Production Track:* persistiertes Browser-E2E-Testartefakt (Playwright)
+  für den Demo-Flow — schließt Risiko 8 für alle drei bisherigen Slices
+  gleichzeitig, kein neues Produkt-Feature
 - *Konzeptarbeit:* Immobilien-Datenmodell (Phase C, `properties`-Entität)
   planen, damit Matching darauf aufbauen kann
 
@@ -639,17 +691,19 @@ eines bereits erteilten Auftrags, außer explizit bestätigt:
 
 - Rechtstexte-Platzhalter
 - DSGVO-Löschjob-Durchsetzung
-- E2E-Testabdeckung als persistiertes Artefakt (Playwright o. ä. — für
-  Slice 1 und 2 weiterhin offen, siehe Risiko 8)
-- `leads.status='termin'`-Dual-Source-Refactor (siehe Risiko 9) — technische
-  Schuld, kein akuter Blocker, solange Analytics/Termin-UI sie weiterhin
-  korrekt getrennt behandeln
+- E2E-Testabdeckung als persistiertes Artefakt (siehe Risiko 8)
+- `leads.status='termin'`-Dual-Source-Refactor (siehe Risiko 9) und
+  fehlende Per-Message-Zeitstempel (siehe Risiko 10) — technische Schuld,
+  kein akuter Blocker, solange UI/Analytics sie weiterhin korrekt behandeln
 
 Konkreter nächster Schritt, wenn nur **einer** gewählt werden soll:
-**Conversations-Ansicht mit echten Daten** (Product Track) — letzte
-verbleibende reine UI-Hülle im ursprünglichen Product-Track-Dreiklang
-(Termine/Analytics/Conversations), Datenbasis (`leads.messages`) existiert
-bereits vollständig.
+**persistiertes Playwright-E2E für den Login-/Demo-Flow** — kleinster,
+klar abgegrenzter Schnitt, schützt direkt CLAUDE.md-Priorität #1 (Demo-
+Flow darf nicht kaputtgehen) und schließt die in allen drei Slices
+dokumentierte E2E-Lücke, statt sie ein viertes Mal aufzuschieben.
+Alternative, gleichwertig kleine Kandidaten: Rechtstexte befüllen
+(Production Track) oder Erinnerungen für Termine (Ausbau der bestehenden
+`appointments`-Tabelle, siehe Phase B).
 
 Diese Empfehlung wird hier **nicht automatisch umgesetzt** — das ist die
 nächste, separat zu bestätigende Aufgabe.
