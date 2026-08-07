@@ -391,6 +391,34 @@ export type Database = {
           subscription_status: string;
         }[];
       };
+      analytics_summary: {
+        Args: {
+          prev_end: string;
+          prev_start: string;
+          window_end: string;
+          window_start: string;
+        };
+        Returns: {
+          appt_currently_scheduled: number;
+          appt_in_prev_window: number;
+          appt_in_window: number;
+          appt_in_window_cancelled: number;
+          appt_in_window_completed: number;
+          appt_in_window_scheduled: number;
+          leads_avg_score_numeric: number;
+          leads_in_prev_window: number;
+          leads_in_window: number;
+          leads_score_cold: number;
+          leads_score_hot: number;
+          leads_score_warm: number;
+          leads_status_neu: number;
+          leads_status_qualifiziert: number;
+          leads_status_termin: number;
+          leads_total: number;
+          leads_with_real_appointment: number;
+          legacy_termin_without_appointment_all_time: number;
+        }[];
+      };
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"];
