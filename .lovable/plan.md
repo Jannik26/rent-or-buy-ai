@@ -1,3 +1,9 @@
+> **Hinweis (2026-08-07):** Dieser Plan ist inhaltlich umgesetzt (siehe
+> `../ROADMAP.md`, Abschnitt 3, für den detaillierten Abgleich). Die
+> laufende, kanonische Roadmap ist ab jetzt `../ROADMAP.md`. Diese Datei
+> bleibt unverändert liegen, da sie ein von Lovable synchronisiertes
+> Session-Artefakt ist.
+
 ## EstateAI — Rebrand & MVP-Ausbau
 
 Umbau der bestehenden SetterAI-App zu **EstateAI**, einem KI-Vertriebsassistenten für Immobilienmakler. Bestehendes Backend (Lovable Cloud, Auth, Leads, Widget-Chat, Diagnose, Rate-Limit, Rollen) bleibt erhalten — wird gezielt erweitert.

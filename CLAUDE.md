@@ -469,14 +469,10 @@ Risiko:
 
 ## Nächste sinnvolle technische Schritte
 
-Reihenfolge:
-
-1. Prüfen, ob CLAUDE.md vollständig ist
-2. Login/Auth stabilisieren
-3. Dashboard-Lead-Anzeige prüfen
-4. Widget-Demo-Flow testen
-5. Danach RE/MAX-Einzelmakler-Struktur planen
-6. Danach Analytics & Problemlösung planen
+Die laufende, kanonische Roadmap mit Phasenplan, verifiziertem
+Implementierungsstand und nächsten Schritten steht in `ROADMAP.md` im
+Repo-Root. Dieser Abschnitt hier verweist nur noch dorthin, statt eine
+zweite Liste zu pflegen.
 
 ---
 
