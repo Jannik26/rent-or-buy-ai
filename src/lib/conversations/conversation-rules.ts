@@ -1,60 +1,30 @@
-// Pure, unit-tested rules for Conversations V1 — no Supabase I/O here (that
-// lives in conversations.functions.ts). Same split as
-// src/lib/appointments/appointment-rules.ts and
+// Pure, unit-tested rules for the canonical Conversations/Messages domain —
+// no Supabase I/O here (that lives in conversations.functions.ts). Same
+// split as src/lib/appointments/appointment-rules.ts and
 // src/lib/analytics/analytics-rules.ts.
 //
-// Data-model reality this module works around (verified against real
-// production rows, see ROADMAP.md): `leads.messages` is a JSONB array of
-// exactly `{ role, content }` — there is NO per-message timestamp anywhere
-// in this schema. Every "when was this said" question this module or its
-// callers answer is therefore necessarily at lead granularity
-// (`leads.updated_at`), never per-message — see getConversationActivityAt
-// below for the one place that limitation is made explicit.
+// Conversations Foundation (see ROADMAP.md and the
+// 20260808014256_add_canonical_conversations.sql migration): `public.
+// messages` is a real, constrained table now — `sender_type`/`content` are
+// NOT NULL with CHECK constraints, so (unlike the old `leads.messages`
+// JSONB) a malformed row is structurally impossible, not just unlikely.
+// The defensive "normalize anything, never throw" functions this file used
+// to need for that JSONB blob are gone — there is nothing left to defend
+// against once the database itself enforces the shape.
 
-export type MessageRole = "user" | "assistant" | "unknown";
+/** The four sender origins this domain distinguishes today — see the
+ * migration header for why exactly these four and not more: 'lead' (the
+ * interested visitor/contact), 'ai' (EstateAI's own generated reply),
+ * 'agent' (a human Makler writing directly — not produced by any write
+ * path yet, but a real, named future case), 'system' (a non-conversational
+ * system entry, e.g. a future "conversation closed" marker). No
+ * automation-specific origin yet (see ROADMAP.md's Follow-up-prep note). */
+export type MessageSenderType = "lead" | "ai" | "agent" | "system";
 
-export type NormalizedMessage = {
-  role: MessageRole;
+export type CanonicalMessage = {
+  senderType: MessageSenderType;
   content: string;
 };
-
-/**
- * Turns one raw array element from `leads.messages` into a safe, typed
- * message. Never throws, never invents content — an element that isn't a
- * `{role, content}`-shaped object, has a non-string content, or an
- * unrecognized role degrades to the most honest neutral representation
- * (`role: "unknown"`, `content: ""`) instead of guessing. The two roles
- * this app has ever actually written are "user" and "assistant" (see
- * widget.chat.ts's transcript construction) — anything else is legacy/
- * malformed by definition, not a silent variant of one of those two.
- */
-export function normalizeMessage(raw: unknown): NormalizedMessage {
-  if (typeof raw !== "object" || raw === null) {
-    return { role: "unknown", content: "" };
-  }
-  const r = raw as Record<string, unknown>;
-  const role: MessageRole =
-    r.role === "user" ? "user" : r.role === "assistant" ? "assistant" : "unknown";
-  const content = typeof r.content === "string" ? r.content : "";
-  return { role, content };
-}
-
-/** `leads.messages` as stored is `unknown` from the client's point of view
- * (JSONB, no DB-level shape guarantee) — this is the one place that gets
- * turned into a safe array. Non-array input (null, undefined, a malformed
- * legacy shape) becomes an empty conversation, never an error. */
-export function normalizeMessages(raw: unknown): NormalizedMessage[] {
-  if (!Array.isArray(raw)) return [];
-  return raw.map(normalizeMessage);
-}
-
-/** Array order in `leads.messages` already IS chronological order — every
- * write path (widget.chat.ts's persistLeadFromTranscript) only ever
- * appends. This getter exists so callers never index `[length - 1]`
- * themselves and get it wrong on an empty array. */
-export function getLastMessage(messages: NormalizedMessage[]): NormalizedMessage | null {
-  return messages.length === 0 ? null : messages[messages.length - 1];
-}
 
 const DEFAULT_PREVIEW_LENGTH = 120;
 
@@ -66,34 +36,25 @@ export function truncatePreview(text: string, maxLength: number = DEFAULT_PREVIE
   return `${collapsed.slice(0, maxLength).trimEnd()}…`;
 }
 
-/**
- * The one available proxy for "when did this conversation last have
- * activity": `leads.updated_at`. Documented here, in one place, as an
- * approximation rather than a true last-message timestamp — messages
- * carry no timestamp of their own (see the module header), and
- * `updated_at` is also bumped by non-message writes to the same row
- * (status changes via the appointments toggle, AI lead-summary
- * regeneration, admin edits — see ROADMAP.md's tech-debt entry for this
- * slice). It still correlates with real activity most of the time
- * (every widget turn upserts the row), which is why V1 uses it rather
- * than inventing a fake per-message time.
- */
-export function getConversationActivityAt(leadUpdatedAt: string): string {
-  return leadUpdatedAt;
-}
-
 export type ConversationSummary = {
   leadId: string;
-  activityAt: string;
+  /** `conversations.last_message_at` — a real column now (maintained by the
+   * `tg_touch_conversation_on_message` trigger), not the `leads.updated_at`
+   * approximation Conversations V1 used to rely on. For legacy/backfilled
+   * conversations it was seeded from `leads.updated_at` once during the
+   * migration (see the backfill migration header) — same value, same
+   * meaning, just no longer computed ad hoc on every read. */
+  activityAt: string | null;
 };
 
 /** Stable, descending sort by activity time — the single definition of
  * "neueste tatsächliche Conversation-Aktivität zuerst" so the server
- * function and any client-side re-sort can never disagree. Invalid/
- * unparseable timestamps sort last rather than throwing or corrupting the
+ * function and any client-side re-sort can never disagree. A null/invalid/
+ * unparseable timestamp sorts last rather than throwing or corrupting the
  * rest of the order. */
 export function sortConversationsByActivity<T extends ConversationSummary>(list: T[]): T[] {
-  const time = (iso: string) => {
+  const time = (iso: string | null) => {
+    if (!iso) return -Infinity;
     const t = new Date(iso).getTime();
     return Number.isNaN(t) ? -Infinity : t;
   };
@@ -123,4 +84,43 @@ export type ConversationScoreFilter = (typeof CONVERSATION_SCORE_FILTERS)[number
 
 export function matchesScoreFilter(score: string, filter: ConversationScoreFilter): boolean {
   return filter === "all" || score === filter;
+}
+
+// ---- Write-path helpers (used by widget.chat.ts via
+// conversations.functions.ts's appendMessages/syncCanonicalConversation) ----
+
+/** The only two roles the AI SDK transcript this app builds has ever
+ * contained (verified against production, see the migration) — anything
+ * else returns null so the caller can skip it rather than insert a row
+ * that would fail messages.sender_type's CHECK constraint anyway. Not a
+ * defensive "normalize anything" function like the old normalizeMessage:
+ * a bad value here is a genuine "don't persist this", not a shape to
+ * paper over. */
+export function mapTranscriptRoleToSenderType(role: string): MessageSenderType | null {
+  if (role === "user") return "lead";
+  if (role === "assistant") return "ai";
+  return null;
+}
+
+export type TranscriptTurn = { role: string; content: string };
+
+/**
+ * The widget resends the FULL conversation history on every turn (standard
+ * AI SDK client behavior), not just the new message — so persisting
+ * `transcript` as-is on every call would re-insert everything already
+ * stored. Given how many canonical messages this conversation already has
+ * (`alreadyPersistedCount`), this returns only the genuinely new tail —
+ * normally exactly one new user turn plus the one new assistant reply this
+ * server call just generated, but written generally (a plain slice) so it
+ * also does the right thing if a caller ever legitimately catches up more
+ * than one new turn at once. Never re-derives or guesses at existing
+ * messages' content — it only ever looks at the count.
+ */
+export function computeNewTranscriptTurns(
+  fullTranscript: TranscriptTurn[],
+  alreadyPersistedCount: number,
+): TranscriptTurn[] {
+  const knownCount = Math.max(0, alreadyPersistedCount);
+  if (knownCount >= fullTranscript.length) return [];
+  return fullTranscript.slice(knownCount);
 }

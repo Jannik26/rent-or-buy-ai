@@ -2,8 +2,9 @@
 
 **Stand: 2026-08-08 · Korrekturrunde 1 + Product-Track-Slice 1
 (Appointments) + Slice 2 (Analytics V1) + Slice 3 (Conversations V1) +
-Verification-Track-Slice 1 (persistierte Playwright-E2E-Basis) ·
-Kanonisches Planungsdokument.**
+Verification-Track-Slice 1 (persistierte Playwright-E2E-Basis) +
+Product-Track-Slice 4 (Conversations Foundation — kanonische
+Conversations-/Messages-Domain) · Kanonisches Planungsdokument.**
 
 Dieses Dokument ersetzt `.lovable/plan.md` als laufende Roadmap. Es wird bei
 jeder größeren strategischen oder architektonischen Entscheidung aktualisiert
@@ -107,7 +108,7 @@ Branch/Kontext; **Integration in EstateAI selbst** ist PLANNED)
 | Admin-/Trial-Monitoring (Super-Admin) | ✅ DONE | `admin/index.tsx`, `admin_company_overview()` SQL-Funktion (service_role-only), `admin_audit_log` wird bei jeder Änderung befüllt |
 | System-Events-Logging | ✅ DONE | `system_events`-Tabelle, durchgängig befüllt (Rate-Limit, Fehler, Abschlüsse) im Widget-Endpoint |
 | Rate-Limiting/Kostenschutz | ✅ DONE | Tages-/Sessionlimits + Minuten-/Company-Rate-Limit in `widget.chat.ts`, `widget_throttle`-Tabelle |
-| Conversations-Ansicht | ✅ DONE (2026-08-08, Product-Track-Slice 3, „Conversations V1") | Master-Detail-Ansicht (Liste links, Verlauf rechts, responsive) mit echten Daten aus `leads.messages`, read-only. Suche (Name), Filter (Status/Score), Empty States, robuste Normalisierung für Legacy-/Malformed-Nachrichten (unbekannte Rollen, fehlender Inhalt, kaputte Einträge — alle im Browser gegen echte Fixtures verifiziert). Sortierung nach `leads.updated_at` als dokumentierte Näherung, da `messages` **keine Zeitstempel pro Nachricht** besitzt (echter Datenmodell-Befund, siehe Risiko 10). Kein Schreibzugriff, keine neuen Kanäle, keine Migration |
+| Conversations-Ansicht | ✅ DONE (2026-08-08, Product-Track-Slice 3 „Conversations V1" + Slice 4 „Conversations Foundation") | Master-Detail-Ansicht (Liste links, Verlauf rechts, responsive), Suche (Name), Filter (Status/Score), Empty States — seit Slice 4 auf der **kanonischen** `conversations`/`messages`-Domain statt `leads.messages`-JSONB (siehe Abschnitt 7). Sortierung nach `conversations.last_message_at` (echte Spalte, per Trigger gepflegt), Reihenfolge innerhalb einer Conversation nach `sequence` (nie `created_at` — siehe Risiko 10, jetzt gelöst). Lead-Detailseite liest denselben Server-Function-Aufruf, keine zweite Wahrheit mehr. Weiterhin kein Schreibzugriff in der UI selbst (nur der Widget-Chat schreibt, jetzt in die kanonische Domain, siehe unten) |
 | Analytics-Dashboard | ✅ DONE (2026-08-07, Product-Track-Slice 2, „Analytics V1") | Echte, tenant-isolierte Kennzahlen statt Platzhalter: Lead-/Termin-KPIs, Zeitfilter (7/30/90 Tage/gesamt), Trends ggü. Vorperiode, 3-stufiger Funnel, Status-/Score-Verteilung, Tagesverläufe (nur für endliche Zeitfenster). Serverseitige Aggregation über eine RLS-gebundene `SECURITY INVOKER`-SQL-Funktion (`analytics_summary`, kein `company_id`-Parameter — Tenant-Isolation entsteht ausschließlich durch RLS), keine PII in der Antwort. `leads.status='termin'` ohne echten Termin wird bewusst **nicht** in „Aktive Termine"/Conversion mitgezählt, sondern separat als Altbestand ausgewiesen (siehe Abschnitt 9, Punkt 9). 12 SQL-Korrektheits-/RLS-Assertions gegen die echte DB (`supabase/tests/analytics_rls.sql`), 22 Unit-Tests für die reinen Kennzahl-Regeln |
 | E2E-Testinfrastruktur (Playwright) | ✅ DONE (2026-08-08, Verification-Track-Slice 1) | `tests/e2e/` — Core-Journey-Suite (Auth-Guard, Dashboard, Leads inkl. Tenant-Isolation, Conversations, Appointments inkl. Storno-/Wiederherstell-Lifecycle, Analytics inkl. Zeitfensterwechsel, Navigation) + ein Mobile-Smoke-Test. Dedizierter QA-Mandant, deterministische/idempotente Fixtures per fixer ID, Auth per Admin-generiertem Magic-Link + `storageState` (kein neuer Signup). 10/10 grün, dreifach reproduzierbar. Ergänzt, ersetzt nicht, die bestehenden SQL-RLS-Tests. Version gepinnt auf `1.45.0` wegen macOS-Ventura-Browser-Binary-Inkompatibilität neuerer Playwright-Versionen auf dieser Entwicklungsmaschine |
 | Automatisierte Follow-ups | ⏳ PLANNED | Nicht implementiert (max. 3 Follow-ups aus CLAUDE.md ist eine Regel, kein Code) |
@@ -393,6 +394,21 @@ werden können, statt auf Phase A zu warten:
   SQL-Assertions grün (`supabase/tests/analytics_rls.sql`). Bewusst nicht
   Teil dieses Slices: Conversations, echte Zeitreihen für „gesamter
   Zeitraum" (nur 7/30/90 Tage), Kosten-/AI-Usage-Analytics
+- ✅ **DONE (2026-08-08, Slice 4, „Conversations Foundation")** Kanonische
+  `conversations`/`messages`-Domain ersetzt `leads.messages` (JSONB) als
+  Source of Truth — vollständige Details in Abschnitt 7. Kurzfassung:
+  additive Migration + verifizierter Backfill (172/172 Legacy-Nachrichten,
+  0 Abweichungen bei Reihenfolge/Inhalt/Rolle/Mandant), RLS (16/16
+  Assertions grün, `supabase/tests/conversations_rls.sql`), zentrale
+  Server-Schicht (`src/lib/conversations/`), Widget-Chat schreibt per
+  Dual-Write zusätzlich in die kanonische Domain (`leads.messages` bleibt
+  unverändert als Legacy-/Rollback-Netz bestehen), Conversations-UI und
+  Lead-Detail lesen beide ausschließlich aus der neuen Domain (eine
+  Wahrheit). Löst Risiko 5 (kein Conversation-Modell) und Risiko 10 (keine
+  Message-Zeitstempel) aus Abschnitt 9. Bewusst nicht Teil dieses Slices:
+  Follow-ups, WhatsApp/E-Mail/Telefon-Kanäle, OpenClaw-Integration, Löschen
+  der Legacy-JSONB-Spalte (siehe Abschnitt 7 für den geplanten
+  Cleanup-Schritt)
 - Lead-Pipeline-Verbesserungen, weitere Maklerfunktionen
 - Beginn von Phase C (Matching/Vergleich/Kosten) kann parallel geplant
   werden, sobald das Immobilien-Datenmodell (Abschnitt 7) steht
@@ -507,11 +523,12 @@ Grizzly Home, sondern:
 
 ## 7. Datenmodell — Planungsnotizen (keine Migrationen in diesem Schritt)
 
-Bestehendes Schema (verifiziert, Stand 2026-08-07): `companies`, `leads`,
+Bestehendes Schema (verifiziert, Stand 2026-08-08): `companies`, `leads`,
 `profiles`, `user_roles`, `widget_throttle`, `system_events`,
-`admin_audit_log`, **`appointments`** (✅ neu, Product-Track-Slice 1 — siehe
-unten). **Kein** `agents`, `widgets`, `properties`/`immobilien`,
-`conversation_threads` als eigene Tabellen.
+`admin_audit_log`, **`appointments`** (✅ neu, Product-Track-Slice 1),
+**`conversations`**/**`messages`** (✅ neu, Product-Track-Slice 4 — siehe
+unten). **Kein** `agents`, `widgets`, `properties`/`immobilien` als eigene
+Tabellen.
 
 **`appointments` (✅ DONE, 2026-08-07):** `id`, `company_id` (server-seitig
 per Trigger aus `lead_id` abgeleitet, nie Client-Input), `lead_id`,
@@ -541,21 +558,78 @@ verlassen je die Funktion. Von `authenticated` aufrufbar, `anon`- und
 20260807201730/20260807201801). 12 Assertions gegen die echte Projekt-DB
 verifiziert, siehe `supabase/tests/analytics_rls.sql`.
 
-**Conversations V1 (✅ DONE, 2026-08-08, keine Migration):** Anders als
-Appointments/Analytics bewusst **ohne** neue SQL-Funktion — Liste und
-Detail lesen `leads` direkt über den RLS-gebundenen Client
-(`src/lib/conversations/conversations.functions.ts`). Für die Liste wird
-`messages` pro Lead vollständig aus Postgres geladen und dann **im
-Server-Function-Layer** (nicht im Client-Bundle) auf Name/Status/Score/
-Nachrichtenanzahl/letzte-Nachricht-Vorschau reduziert — die volle
-Nachrichtenhistorie verlässt den Server nie außer für die eine gerade
-geöffnete Detail-Ansicht. Bewusste V1-Abwägung (dokumentiert statt
-automatisch durch eine Migration gelöst): bei heutigen Datenmengen
-(einstellige/niedrige zweistellige Leads pro Mandant) vernachlässigbar;
-sollte die Listengröße relevant wachsen, wäre eine Projektionsfunktion
-nach dem `analytics_summary`-Muster der nächste Schritt. Normalisierung
-(`src/lib/conversations/conversation-rules.ts`) ist eine reine, getestete
-Funktion — keine neue Zwischenspeicherung, keine neue Tabelle.
+**Conversations V1 (✅ DONE, 2026-08-08, keine Migration) →
+Conversations Foundation (✅ DONE, 2026-08-08, Slice 4, kanonische
+Migration):** V1 las `leads.messages` (JSONB) direkt; Slice 4 ersetzt das
+durch eine eigene, kanonische Domain — **`conversations`** (`id`,
+`company_id`/`lead_id` server-seitig per Trigger abgeleitet, nie
+Client-Input, `channel` text+check — heute nur `website`, `email`/
+`whatsapp`/`phone` schon als erlaubte Werte vorbereitet, siehe
+Omnichannel-Absatz unten —, `status` `open`/`closed`, `last_message_at`
+per Trigger gepflegt) und **`messages`** (`id`, `conversation_id`,
+`company_id` ebenfalls trigger-abgeleitet, `sender_type`
+`lead`/`ai`/`agent`/`system`, `content`, `sequence`, `created_at`,
+`is_legacy_import`).
+
+*Reihenfolge/Zeitstempel (löst Risiko 10):* `leads.messages` hatte nie
+einen Zeitstempel pro Nachricht. Statt das zu fingieren, ist `sequence`
+(0-basiert, pro Conversation, immer server-seitig per Trigger vergeben —
+Client-Werte werden ignoriert) die einzige Ordnungsquelle, für alte und
+neue Nachrichten gleichermaßen. Migrierte Alt-Nachrichten bekommen
+`is_legacy_import = true` und `created_at = leads.updated_at` (die
+gleiche, bereits vorher als Näherung dokumentierte Aktivitätszeit — bewusst
+NICHT `now()` beim Migrationslauf, damit die bereits existierende relative
+Aktualitäts-Reihenfolge der Conversations-Liste erhalten bleibt) statt
+eines erfundenen Pro-Nachricht-Zeitpunkts; die UI zeigt ohnehin keine
+Pro-Nachricht-Uhrzeit an, das Flag ist eine Absicherung für künftigen Code.
+
+*Sender-Mapping:* `user`→`lead`, `assistant`→`ai` (exakt die bisherige
+Bedeutung), plus bereits vorbereitete, noch ungenutzte Werte `agent`
+(menschliche Makler-Antwort) und `system` — kleinste heute sinnvolle
+Semantik, keine Automation-Vorentscheidung (siehe Follow-up-Vorbereitung
+unten).
+
+*Backfill:* additive Migration
+(`20260808014256_add_canonical_conversations.sql` +
+`20260808014600_backfill_canonical_conversations.sql`), `leads.messages`
+unverändert. 25/25 Leads mit Nachrichten → 25 Conversations, 172/172
+Nachrichten migriert, per SQL-Assertion **innerhalb** der Migration
+verifiziert (bricht die ganze Migration ab, falls auch nur eine Nachricht
+abweicht) und danach unabhängig erneut gegen die echte DB geprüft: 0
+Abweichungen bei Anzahl/Reihenfolge/Inhalt/Rolle/Mandant.
+
+*RLS:* eigene, owner-scoped Policies analog `appointments` (kein
+anon-Zugriff — der Widget-Chat schrieb `leads.messages` schon vorher
+ausschließlich über den Service-Role-Client, nie über anon-RLS, siehe
+`widget.chat.ts`; die neue Domain ändert daran nichts). 16/16 Assertions
+gegen die echte DB verifiziert, `supabase/tests/conversations_rls.sql`.
+
+*Schreibpfad:* Dual-Write, nicht Cutover — `persistLeadFromTranscript`
+(`widget.chat.ts`) schreibt weiterhin unverändert das volle
+`leads.messages`-Array (Null-Risiko für den bestehenden, bewährten Pfad),
+und zusätzlich (eigener try/catch, darf den Chat-Response niemals
+blockieren) nur die seit dem letzten Turn **neuen** Nachrichten in die
+kanonische Domain (`syncCanonicalConversation`,
+`src/lib/conversations/conversations.functions.ts`) — die Berechnung „was
+ist neu" ist eine reine, getestete Funktion
+(`computeNewTranscriptTurns`), kein Rätselraten anhand von Inhalten. Reale
+Drift-Gefahr: wenn `persistLeadFromTranscript`s JSONB-Schreiblogik künftig
+geändert wird, ohne den kanonischen Schreibpfad mitzuziehen, laufen beide
+Quellen auseinander — dokumentiert, nicht automatisch verhindert.
+
+*Lesepfad:* vollständiger Cutover — Conversations-Liste/-Detail
+(`conversations.functions.ts`) und Lead-Detail (`leads/$leadId.tsx`, liest
+jetzt denselben `getConversationDetail`-Aufruf statt eigenem
+`leads.messages`-Zugriff — eine Wahrheit) lesen ausschließlich aus
+`conversations`/`messages`. `leads.messages` wird von der App nirgends
+mehr gelesen, bleibt aber als Spalte bestehen.
+
+*Geplanter Cleanup (nicht Teil dieses Slices, hier vorgemerkt):* nach einer
+Beobachtungsphase (mehrere reale Widget-Konversationen, die den
+Dual-Write ohne Drift durchlaufen haben) kann `leads.messages` per eigener
+Migration entfernt und `persistLeadFromTranscript` auf einen reinen
+Kanonisch-Write umgestellt werden — bewusst nicht in diesem Slice, da noch
+kein Beobachtungsfenster existiert.
 
 Für kommende Phasen wahrscheinlich nötig (grobe Skizze, vor Umsetzung im
 Detail zu planen):
@@ -568,8 +642,26 @@ Detail zu planen):
 | `search_criteria`/`match_profiles` | C | Interessent (Auth-Modell TBD, siehe Risiko 6 in Abschnitt 9) | eigenes RLS-Modell nötig, da Interessenten heute keine Accounts haben | Muss/Kann-Gewichtung, spätere Pendel-/Lagefaktoren als optionale Kriterien |
 | `furniture_items` ("Meine Möbel") | D | Interessent | wie oben | Pflichtfelder: Name, Kategorie, Breite, Tiefe, Höhe. Optional (später): Foto, 3D-Asset, Material/Farbe, Demontierbarkeit |
 | `fit_checks` (Ergebnis, nicht zwingend eigene Tabelle) | D | Interessent | wie oben | Ergebnis „passt in Raum?", sinnvolle Platzierung, Laufwege-Erhalt, Mehrfach-Möbel-Kombination; Tür-/Zugangsprüfung nur bei ausreichend verlässlichen Maßen — sonst als „nicht geprüft" kennzeichnen, nicht raten |
-| `conversation_threads` + `messages` | F | `company_id` | wie leads | ersetzt/ergänzt `leads.messages` JSONB, kanalübergreifend |
+| ~~`conversation_threads` + `messages`~~ | ~~F~~ | `company_id` | wie leads | ✅ **DONE, aus Phase F vorgezogen** — siehe oben, jetzt `conversations`/`messages`, bereits kanalvorbereitet |
 | `workflows`/`automation_runs` | G | `company_id` | wie leads | Retry-/Fehlerzustände, Kosten pro Lauf |
+
+**Omnichannel-Adapter-Prinzip (Phase F, Datenmodell bereits vorbereitet,
+siehe oben):** externe Systeme wie OpenClaw dürfen künftig als
+austauschbare Channel-/Gateway-Adapter auftreten, aber nie zur
+kanonischen Datenquelle werden — d. h. immer `External Channel → Adapter →
+EstateAI-`conversations`/`messages` (schreibt über denselben
+`syncCanonicalConversation`-/`appendMessages`-Pfad wie der Website-Chat,
+nur mit `channel = 'email'`/`'whatsapp'`/`'phone'` statt `'website'`),
+niemals `External Channel → eigene Conversation-DB → EstateAI liest nur
+mit`. Kein Channel wird in diesem Slice angebunden — nur das Datenmodell
+verträgt es bereits ohne weitere Migration.
+
+**Follow-up-Vorbereitung (Phase G, keine Automation in diesem Slice):**
+`messages.sender_type` unterscheidet bereits `lead`/`ai`/`agent`/`system` —
+ausreichend, um später zwischen einer normalen KI-Antwort und einer
+automatisierten Follow-up-Nachricht zu unterscheiden, falls das relevant
+wird (z. B. über `system` oder einen zusätzlichen Wert). Keine
+Automation-Engine, keine Trigger, kein Scheduler in diesem Slice.
 
 Alle mit personenbezogenen Daten (Interessenten-Kriterien, Möbel-Fotos,
 Telefon-Transkripte) brauchen vor Umsetzung: Retention-Policy analog
@@ -626,12 +718,13 @@ Kriterien zurückführbar sein (siehe Beispiel in Phase C).
    entschieden werden, ob eine echte Abstraktion eingeführt wird — das ist
    eine noch offene Entscheidung, keine Empfehlung, die dieses Dokument
    vorwegnimmt.
-5. **`leads.messages` als JSONB statt eigenes Conversation-Modell** —
-   funktioniert für den heutigen Ein-Kanal-Chat gut (Conversations V1 liest
-   direkt darauf, siehe Abschnitt 2/7), wird aber zum Umbau-Kandidaten
-   sobald Telefon/E-Mail (Phase F) dazukommen — dann braucht es echte
-   `conversation_threads`/`messages`-Tabellen mit Kanal- und
-   Zeitstempel-Feldern statt der heutigen JSONB-Spalte.
+5. **`leads.messages` als JSONB statt eigenes Conversation-Modell — ✅
+   GELÖST (2026-08-08, Product-Track-Slice 4, „Conversations Foundation").**
+   Kanonische `conversations`/`messages`-Tabellen mit Kanal-Feld (bereits
+   `email`/`whatsapp`/`phone` vorbereitet) ersetzen `leads.messages` als
+   Lesequelle vollständig; Details in Abschnitt 7. `leads.messages` bleibt
+   als Legacy-Spalte bestehen (Dual-Write, siehe Abschnitt 7) — geplanter
+   Cleanup nach Beobachtungsfenster, noch nicht terminiert.
 6. **Interessenten haben keine Accounts** — Phase C/D (Matching, Merkliste,
    „Meine Möbel") setzt voraus, dass Interessenten wiedererkannt werden
    können. Aktuell ist niemand außer dem Makler authentifiziert. Braucht
@@ -674,20 +767,16 @@ Kriterien zurückführbar sein (siehe Beispiel in Phase C).
    Terminvereinbarung direkt einen `appointments`-Eintrag an, statt nur
    `leads.status` zu setzen) — **kein** Umsetzungsauftrag für dieses
    Dokument, nur als offener Refactor-Punkt festgehalten.
-10. **`leads.messages` besitzt keinen Zeitstempel pro Nachricht** —
-    echter, gegen Produktionsdaten verifizierter Befund aus Slice 3
-    (Conversations): jedes Element ist ausschließlich `{role, content}`
-    (siehe `widget.chat.ts`'s `persistLeadFromTranscript`). Conversations
-    V1 sortiert deshalb nach `leads.updated_at` als dokumentierte
-    Näherung für „letzte Aktivität" — dieses Feld wird aber auch durch
-    Nicht-Nachrichten-Schreibvorgänge auf derselben Zeile aktualisiert
-    (Termin-Toggle, KI-Zusammenfassung-Regenerierung, Admin-Edits), ist
-    also kein exakter „letzte Nachricht"-Zeitstempel. Innerhalb einer
-    Conversation ist nur die Reihenfolge (Array-Index), nie ein Zeitpunkt,
-    bekannt. Langfristige Lösung: `starts_at`/`sent_at` pro Nachricht beim
-    Schreiben mitspeichern (kleine, additive Änderung an der
-    JSONB-Struktur oder der Umstieg auf `conversation_threads`/`messages`
-    aus Risiko 5) — **kein** Umsetzungsauftrag für dieses Dokument.
+10. **`leads.messages` besitzt keinen Zeitstempel pro Nachricht — ✅
+    GELÖST für die kanonische Domain (2026-08-08, Slice 4).** Ursprünglicher
+    Befund aus Slice 3 bleibt für `leads.messages` selbst weiterhin wahr
+    (das Legacy-JSONB-Feld hat und bekommt nie Zeitstempel), aber die neue
+    `messages`-Tabelle löst das für alles, was die App tatsächlich liest:
+    `sequence` (server-seitig, trigger-vergeben) ist die alleinige
+    Ordnungsquelle, `created_at` ist für neue Nachrichten echt und für
+    migrierte Alt-Nachrichten explizit als `is_legacy_import = true`
+    markiert statt eine falsche Präzision vorzutäuschen — siehe Abschnitt 7
+    für die volle Herleitung.
 11. **Intermittente, dev-server-only React-Mount-Race** (neu identifiziert,
     Verification-Track-Slice 1) — der Konsolenfehler "Can't perform a React
     state update on a component that hasn't mounted yet" trat während der
@@ -712,23 +801,64 @@ Kriterien zurückführbar sein (siehe Beispiel in Phase C).
     Kompromiss statt stiller Unterdrückung. Ein echter Produktbug wurde bei
     derselben Untersuchung gefunden und behoben (recharts-`ResponsiveContainer`-
     Mount-Race auf `/analytics`, siehe Abschnitt 6/Risiko 8).
+12. **Dual-Write-Drift-Risiko `leads.messages` ↔ `conversations`/`messages`**
+    (neu, Slice 4) — `persistLeadFromTranscript` (`widget.chat.ts`) schreibt
+    beide Ziele in einem Aufruf, aber über zwei unabhängige Code-Pfade
+    (voller JSONB-Überschreib vs. inkrementeller kanonischer Append über
+    `syncCanonicalConversation`). Ändert sich künftig die eine Seite ohne
+    die andere mitzuziehen, laufen sie auseinander — kein automatischer
+    Gleichlauf-Test dafür in diesem Slice (nur die Backfill-Parität wurde
+    einmalig geprüft, nicht ein laufender Vergleich). Mitigiert dadurch,
+    dass die App `leads.messages` nirgends mehr liest (Drift wäre unsichtbar
+    für Nutzer, aber würde den späteren JSONB-Cleanup erschweren) — siehe
+    Abschnitt 7 für den geplanten Cleanup-Schritt, der Drift dann endgültig
+    unmöglich macht.
+13. **Unerklärte Differenz in der Lead-Anzahl während dieser Session** (neu,
+    Slice 4, transparent dokumentiert statt verschwiegen) — die Read-Only-
+    Analyse zu Beginn dieses Slices zählte 25 Leads/172 Nachrichten (siehe
+    Abschnitt 7); am Ende derselben Session zeigt dieselbe Abfrage 23
+    Leads/166 Nachrichten (2 Leads mit zusammen 6 Nachrichten fehlen). Diese
+    Session selbst wurde sorgfältig darauf geprüft, ob eigene Aktionen das
+    verursacht haben können — Migrationen sind rein additiv (verifiziert),
+    das RLS-Testskript nutzte ausschließlich fest-`99999999-`/`e2e`-
+    präfixte Fixture-IDs (kein Treffer auf echte Leads), das
+    Backfill-Verifikations-Query lief nach der Differenz erneut mit 0
+    Abweichungen (die aktuell existierenden Daten sind intern vollständig
+    konsistent). Kein Lösch-Weg für Leads existiert im UI-Code
+    (`grep` auf `delete`/Leads ergab nichts); die DB-seitige
+    „Owner deletes leads"-RLS-Policy existiert aber bereits seit der
+    allerersten Migration (lange vor dieser Session) und macht eine externe
+    Löschung technisch möglich. Ursache **nicht** abschließend geklärt — da
+    dies ein reales, mit dem Projekt verbundenes Supabase-Projekt ist,
+    plausibelste Erklärung ist externe/parallele Aktivität außerhalb dieser
+    Session. Kein Datenverlust auf Seiten der neuen kanonischen Tabellen
+    (Cascade-Löschung von `conversations`/`messages` bei Lead-Löschung ist
+    korrektes, gewolltes Verhalten, keine Fehlfunktion) — aber der Nutzer
+    sollte wissen, dass 2 Leads zwischen Sessionstart und -ende
+    verschwunden sind, falls das nicht beabsichtigt war.
 
 ---
 
 ## 10. Empfehlung: nächster Schritt
 
-**Update 2026-08-08 (Verification-Track-Slice 1):** Der Product-Track-
-Dreiklang (`appointments`, Analytics V1, Conversations V1) **und** die
-persistierte Playwright-E2E-Basis (Track B, siehe Abschnitt 6/Risiko 8)
-sind jetzt beide umgesetzt, getestet und commitet. Rest dieses Abschnitts
-bleibt als Empfehlung für die **weiteren** Schritte stehen — weiterhin
-**nicht** Teil eines bereits erteilten Auftrags, außer explizit bestätigt:
+**Update 2026-08-08 (Product-Track-Slice 4, „Conversations Foundation"):**
+explizit vom Auftraggeber angefordert, außerhalb der Reihenfolge dieser
+Empfehlung (die zuvor Follow-ups vorschlug) — die kanonische
+`conversations`/`messages`-Domain ist jetzt umgesetzt, getestet und
+commitet (siehe Abschnitt 6/7). Der Product-Track-Dreiklang
+(`appointments`, Analytics V1, Conversations V1/Foundation) **und** die
+persistierte Playwright-E2E-Basis (Track B) sind damit alle vier
+umgesetzt. Rest dieses Abschnitts bleibt als Empfehlung für die
+**weiteren** Schritte stehen — weiterhin **nicht** Teil eines bereits
+erteilten Auftrags, außer explizit bestätigt:
 
 **Kann sofort parallel starten (keine Abhängigkeiten untereinander):**
 
 - *Product Track (Track A):* automatisierte, begrenzte Lead-Follow-ups
   (max. 3, siehe CLAUDE.md-Regel und Empfehlung unten) — bislang reine
-  Regel ohne Code (siehe Abschnitt 2)
+  Regel ohne Code, jetzt zusätzlich durch `messages.sender_type`
+  (`lead`/`ai`/`agent`/`system`, siehe Abschnitt 7) besser vorbereitet als
+  vor Slice 4
 - *Production Track:* Rechtstexte (Impressum/Datenschutz) mit echten
   Angaben füllen — kleinster Aufwand, größtes Compliance-Risiko wenn offen
 - *Konzeptarbeit:* Immobilien-Datenmodell (Phase C, `properties`-Entität)
@@ -746,11 +876,14 @@ bleibt als Empfehlung für die **weiteren** Schritte stehen — weiterhin
 
 - Rechtstexte-Platzhalter
 - DSGVO-Löschjob-Durchsetzung
-- `leads.status='termin'`-Dual-Source-Refactor (siehe Risiko 9) und
-  fehlende Per-Message-Zeitstempel (siehe Risiko 10) — technische Schuld,
-  kein akuter Blocker, solange UI/Analytics sie weiterhin korrekt behandeln
+- `leads.status='termin'`-Dual-Source-Refactor (siehe Risiko 9) — technische
+  Schuld, kein akuter Blocker, solange UI/Analytics sie weiterhin korrekt
+  behandeln
 - Intermittente dev-only Mount-Race-Konsolenwarnung (Risiko 11) — kein
   Produktionsdefekt, aktuell gezielt aus der E2E-Assertion gefiltert
+- `leads.messages`-JSONB-Cleanup nach Beobachtungsfenster (Risiko 12,
+  Abschnitt 7) — kein akuter Blocker, die App liest die Legacy-Spalte
+  bereits nirgends mehr
 
 **Konkreter nächster Schritt (Track A / Product Track), wenn nur einer
 gewählt werden soll: automatisierte, begrenzte Lead-Follow-ups (max. 3,
@@ -766,11 +899,14 @@ Lead-Scoring (`lead-summary.server.ts`, `scoreFromData`) stehen bereits,
 `appointments`/Analytics können die Wirkung sofort messen (Conversion-
 Funnel existiert schon), und die Regel ist in CLAUDE.md bereits bewusst
 begrenzt (max. 3, nicht aggressiv) — kein neues Datenmodell-Fass, klar
-abgegrenzter Schnitt. Alternative, ebenfalls hochwertige Kandidaten:
-Termin-Erinnerungen/Kalender-Sync (Ausbau der bestehenden
-`appointments`-Tabelle, Phase B) — geringerer Hebel auf Lead-Konversion,
-da er erst nach einem bereits vereinbarten Termin greift, aber ähnlich
-klein und direkt aus vorhandenen Daten umsetzbar.
+abgegrenzter Schnitt. Mit Slice 4 jetzt sogar leichter umsetzbar als vorher
+gedacht: eine Follow-up-Nachricht ist einfach ein `appendMessages`-Aufruf
+mit `sender_type` passend zur Herkunft, keine neue Tabelle nötig.
+Alternative, ebenfalls hochwertige Kandidaten: Termin-Erinnerungen/
+Kalender-Sync (Ausbau der bestehenden `appointments`-Tabelle, Phase B) —
+geringerer Hebel auf Lead-Konversion, da er erst nach einem bereits
+vereinbarten Termin greift, aber ähnlich klein und direkt aus vorhandenen
+Daten umsetzbar.
 
 Diese Empfehlung wird hier **nicht automatisch umgesetzt** — das ist die
 nächste, separat zu bestätigende Aufgabe.

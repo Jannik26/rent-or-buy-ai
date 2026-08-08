@@ -1,97 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
-  getConversationActivityAt,
-  getLastMessage,
+  computeNewTranscriptTurns,
+  mapTranscriptRoleToSenderType,
   matchesScoreFilter,
   matchesSearch,
   matchesStatusFilter,
-  normalizeMessage,
-  normalizeMessages,
   sortConversationsByActivity,
   truncatePreview,
 } from "./conversation-rules";
-
-describe("normalizeMessage", () => {
-  it("passes through a well-formed user/assistant message", () => {
-    expect(normalizeMessage({ role: "user", content: "Hallo" })).toEqual({
-      role: "user",
-      content: "Hallo",
-    });
-    expect(normalizeMessage({ role: "assistant", content: "Willkommen" })).toEqual({
-      role: "assistant",
-      content: "Willkommen",
-    });
-  });
-
-  it("degrades an unrecognized role to 'unknown' instead of misattributing it", () => {
-    expect(normalizeMessage({ role: "system", content: "x" }).role).toBe("unknown");
-    expect(normalizeMessage({ role: "tool", content: "x" }).role).toBe("unknown");
-    expect(normalizeMessage({ content: "no role field" }).role).toBe("unknown");
-  });
-
-  it("never invents content for a missing or non-string content field", () => {
-    expect(normalizeMessage({ role: "user" }).content).toBe("");
-    expect(normalizeMessage({ role: "user", content: 42 }).content).toBe("");
-    expect(normalizeMessage({ role: "user", content: null }).content).toBe("");
-  });
-
-  it("handles completely malformed entries (null, primitives, arrays) without throwing", () => {
-    expect(normalizeMessage(null)).toEqual({ role: "unknown", content: "" });
-    expect(normalizeMessage(undefined)).toEqual({ role: "unknown", content: "" });
-    expect(normalizeMessage("just a string")).toEqual({ role: "unknown", content: "" });
-    expect(normalizeMessage(42)).toEqual({ role: "unknown", content: "" });
-    expect(normalizeMessage([1, 2, 3])).toEqual({ role: "unknown", content: "" });
-  });
-});
-
-describe("normalizeMessages", () => {
-  it("maps a well-formed array", () => {
-    const result = normalizeMessages([
-      { role: "assistant", content: "Hallo" },
-      { role: "user", content: "Hi" },
-    ]);
-    expect(result).toEqual([
-      { role: "assistant", content: "Hallo" },
-      { role: "user", content: "Hi" },
-    ]);
-  });
-
-  it("returns an empty array for null, undefined, or a non-array legacy shape", () => {
-    expect(normalizeMessages(null)).toEqual([]);
-    expect(normalizeMessages(undefined)).toEqual([]);
-    expect(normalizeMessages({ role: "user", content: "not an array" })).toEqual([]);
-    expect(normalizeMessages("legacy string blob")).toEqual([]);
-  });
-
-  it("normalizes each element independently — one malformed entry doesn't break the rest", () => {
-    const result = normalizeMessages([
-      { role: "user", content: "gut" },
-      "malformed",
-      { role: "assistant", content: "auch gut" },
-      null,
-    ]);
-    expect(result).toEqual([
-      { role: "user", content: "gut" },
-      { role: "unknown", content: "" },
-      { role: "assistant", content: "auch gut" },
-      { role: "unknown", content: "" },
-    ]);
-  });
-});
-
-describe("getLastMessage", () => {
-  it("returns the last element of a non-empty conversation", () => {
-    const messages = normalizeMessages([
-      { role: "assistant", content: "erste" },
-      { role: "user", content: "letzte" },
-    ]);
-    expect(getLastMessage(messages)).toEqual({ role: "user", content: "letzte" });
-  });
-
-  it("returns null for an empty conversation, never throws", () => {
-    expect(getLastMessage([])).toBeNull();
-  });
-});
 
 describe("truncatePreview", () => {
   it("returns short text unchanged", () => {
@@ -112,12 +28,6 @@ describe("truncatePreview", () => {
   it("truncating empty text never fabricates content", () => {
     expect(truncatePreview("")).toBe("");
     expect(truncatePreview("   ")).toBe("");
-  });
-});
-
-describe("getConversationActivityAt", () => {
-  it("is the identity function over leads.updated_at (documents the approximation, doesn't hide it)", () => {
-    expect(getConversationActivityAt("2026-08-01T00:00:00.000Z")).toBe("2026-08-01T00:00:00.000Z");
   });
 });
 
@@ -147,6 +57,14 @@ describe("sortConversationsByActivity", () => {
       { leadId: "good", activityAt: "2026-08-01T00:00:00.000Z" },
     ];
     expect(sortConversationsByActivity(list).map((c) => c.leadId)).toEqual(["good", "bad"]);
+  });
+
+  it("sorts a null activityAt (conversation with no messages yet) last", () => {
+    const list = [
+      { leadId: "empty", activityAt: null },
+      { leadId: "good", activityAt: "2026-08-01T00:00:00.000Z" },
+    ];
+    expect(sortConversationsByActivity(list).map((c) => c.leadId)).toEqual(["good", "empty"]);
   });
 
   it("handles an empty list", () => {
@@ -184,5 +102,50 @@ describe("matchesStatusFilter / matchesScoreFilter", () => {
     expect(matchesStatusFilter("neu", "qualifiziert")).toBe(false);
     expect(matchesScoreFilter("warm", "warm")).toBe(true);
     expect(matchesScoreFilter("hot", "warm")).toBe(false);
+  });
+});
+
+describe("mapTranscriptRoleToSenderType", () => {
+  it("maps the two real transcript roles", () => {
+    expect(mapTranscriptRoleToSenderType("user")).toBe("lead");
+    expect(mapTranscriptRoleToSenderType("assistant")).toBe("ai");
+  });
+
+  it("returns null for anything else instead of guessing", () => {
+    expect(mapTranscriptRoleToSenderType("system")).toBeNull();
+    expect(mapTranscriptRoleToSenderType("tool")).toBeNull();
+    expect(mapTranscriptRoleToSenderType("")).toBeNull();
+  });
+});
+
+describe("computeNewTranscriptTurns", () => {
+  const transcript = [
+    { role: "assistant", content: "Hallo" },
+    { role: "user", content: "Hi" },
+    { role: "user", content: "neue Frage" },
+    { role: "assistant", content: "neue Antwort" },
+  ];
+
+  it("returns only the tail beyond what's already persisted (the normal one-turn case)", () => {
+    expect(computeNewTranscriptTurns(transcript, 2)).toEqual([
+      { role: "user", content: "neue Frage" },
+      { role: "assistant", content: "neue Antwort" },
+    ]);
+  });
+
+  it("returns the full transcript when nothing is persisted yet (first turn)", () => {
+    expect(computeNewTranscriptTurns(transcript, 0)).toEqual(transcript);
+  });
+
+  it("returns an empty array when everything is already persisted", () => {
+    expect(computeNewTranscriptTurns(transcript, transcript.length)).toEqual([]);
+  });
+
+  it("never returns a negative slice for a persisted count beyond the transcript length", () => {
+    expect(computeNewTranscriptTurns(transcript, transcript.length + 5)).toEqual([]);
+  });
+
+  it("treats a negative persisted count as zero instead of throwing", () => {
+    expect(computeNewTranscriptTurns(transcript, -3)).toEqual(transcript);
   });
 });

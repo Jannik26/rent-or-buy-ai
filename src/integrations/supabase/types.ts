@@ -163,6 +163,54 @@ export type Database = {
         };
         Relationships: [];
       };
+      conversations: {
+        Row: {
+          channel: string;
+          company_id: string;
+          created_at: string;
+          id: string;
+          last_message_at: string | null;
+          lead_id: string;
+          status: string;
+          updated_at: string;
+        };
+        Insert: {
+          channel?: string;
+          company_id: string;
+          created_at?: string;
+          id?: string;
+          last_message_at?: string | null;
+          lead_id: string;
+          status?: string;
+          updated_at?: string;
+        };
+        Update: {
+          channel?: string;
+          company_id?: string;
+          created_at?: string;
+          id?: string;
+          last_message_at?: string | null;
+          lead_id?: string;
+          status?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "conversations_company_id_fkey";
+            columns: ["company_id"];
+            isOneToOne: false;
+            referencedRelation: "companies";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "conversations_lead_id_fkey";
+            columns: ["lead_id"];
+            isOneToOne: false;
+            referencedRelation: "leads";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       leads: {
         Row: {
           ai_summary: string | null;
@@ -263,6 +311,54 @@ export type Database = {
             columns: ["company_id"];
             isOneToOne: false;
             referencedRelation: "companies";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      messages: {
+        Row: {
+          company_id: string;
+          content: string;
+          conversation_id: string;
+          created_at: string;
+          id: string;
+          is_legacy_import: boolean;
+          sender_type: string;
+          sequence: number;
+        };
+        Insert: {
+          company_id: string;
+          content: string;
+          conversation_id: string;
+          created_at?: string;
+          id?: string;
+          is_legacy_import?: boolean;
+          sender_type: string;
+          sequence?: number;
+        };
+        Update: {
+          company_id?: string;
+          content?: string;
+          conversation_id?: string;
+          created_at?: string;
+          id?: string;
+          is_legacy_import?: boolean;
+          sender_type?: string;
+          sequence?: number;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "messages_company_id_fkey";
+            columns: ["company_id"];
+            isOneToOne: false;
+            referencedRelation: "companies";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "messages_conversation_id_fkey";
+            columns: ["conversation_id"];
+            isOneToOne: false;
+            referencedRelation: "conversations";
             referencedColumns: ["id"];
           },
         ];

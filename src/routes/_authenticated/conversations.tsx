@@ -16,9 +16,9 @@ import {
   matchesScoreFilter,
   matchesSearch,
   matchesStatusFilter,
+  type CanonicalMessage,
   type ConversationScoreFilter,
   type ConversationStatusFilter,
-  type NormalizedMessage,
 } from "@/lib/conversations/conversation-rules";
 import type { LeadIntent, LeadScore } from "@/lib/lead-summary-schema";
 
@@ -236,11 +236,14 @@ function ConversationRow({
         <div className="flex items-center justify-between gap-2">
           <span className="font-medium text-sm truncate">{c.name ?? "Anonymer Besucher"}</span>
           <span className="text-[11px] text-muted-foreground whitespace-nowrap shrink-0">
-            {formatDate(c.activityAt)}
+            {/* activityAt is only null for a conversation with zero
+                messages, which never appears in this list (filtered above)
+                — the fallback is just to satisfy the nullable type. */}
+            {c.activityAt ? formatDate(c.activityAt) : "—"}
           </span>
         </div>
         <p className="mt-0.5 text-xs text-muted-foreground truncate">
-          {c.lastMessageRole === "user" ? "" : "Sie: "}
+          {c.lastMessageSenderType === "lead" ? "" : "Sie: "}
           {c.lastMessagePreview || "—"}
         </p>
         <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
@@ -345,23 +348,27 @@ function ConversationDetailPanel({ leadId, onBack }: { leadId: string; onBack: (
   );
 }
 
-function MessageBubble({ message: m }: { message: NormalizedMessage }) {
-  if (m.role === "unknown") {
+function MessageBubble({ message: m }: { message: CanonicalMessage }) {
+  // 'system' messages (a future "conversation closed" marker etc. — no
+  // write path produces one yet) get the same neutral, centered treatment
+  // the old "unknown/malformed legacy row" case used, since it's the same
+  // "neither the lead nor a reply" bucket visually.
+  if (m.senderType === "system") {
     return (
       <div className="flex justify-center">
         <div className="max-w-[85%] rounded-xl border border-dashed border-border px-3.5 py-2 text-xs text-muted-foreground italic">
-          {m.content || "Nachricht ohne erkennbare Rolle/Inhalt (Legacy-Datensatz)"}
+          {m.content}
         </div>
       </div>
     );
   }
-  const isUser = m.role === "user";
+  const isLead = m.senderType === "lead";
   return (
-    <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
+    <div className={cn("flex", isLead ? "justify-end" : "justify-start")}>
       <div
         className={cn(
           "max-w-[80%] rounded-xl px-3.5 py-2 text-sm leading-relaxed whitespace-pre-wrap break-words",
-          isUser ? "bg-primary text-primary-foreground" : "bg-muted text-foreground",
+          isLead ? "bg-primary text-primary-foreground" : "bg-muted text-foreground",
         )}
       >
         {m.content || <span className="italic opacity-60">— kein Inhalt —</span>}

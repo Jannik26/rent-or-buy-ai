@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
-import { FIXTURE_IDS } from "./fixtures-data";
+import { createClient } from "@supabase/supabase-js";
+import { FIXTURE_IDS, QA_COMPANY_ID } from "./fixtures-data";
 
 const CONVERSATION_LEAD_NAME = "E2E QA Fixture — Conversation Lead";
 const APPOINTMENT_LEAD_NAME = "E2E QA Fixture — Appointment Lead";
@@ -124,6 +125,56 @@ test.describe("Core journey (authenticated as the QA/E2E test tenant)", () => {
     await page.getByRole("button", { name: "Alle Status" }).click();
 
     expect(errors, `console errors on /conversations: ${errors.join("\n")}`).toEqual([]);
+  });
+
+  test("D2: a message written directly to the canonical tables persists and survives a reload", async ({
+    page,
+  }) => {
+    // Closes the loop the rest of test D can't: D only proves the UI reads
+    // the canonical tables correctly, not that a freshly-written row
+    // actually round-trips. Writing straight to the DB (rather than
+    // driving the — read-only, see conversations.tsx's own "read-only"
+    // subtitle — Conversations UI) is the only available write path today
+    // that isn't the widget's live AI chat endpoint (out of scope/cost for
+    // this suite, see tests/e2e/README.md). Only ever touches the QA
+    // fixture's own conversation — never any real customer data.
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!supabaseUrl || !serviceRoleKey) {
+      throw new Error(
+        "SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are not set — see tests/e2e/README.md.",
+      );
+    }
+    const admin = createClient(supabaseUrl, serviceRoleKey);
+    const probeContent = `E2E round-trip probe ${Date.now()}`;
+
+    const { error: insertError } = await admin.from("messages").insert({
+      conversation_id: FIXTURE_IDS.conversationLeadConversation,
+      company_id: QA_COMPANY_ID,
+      sender_type: "agent",
+      content: probeContent,
+    });
+    expect(insertError, `probe message insert failed: ${insertError?.message}`).toBeNull();
+
+    try {
+      await page.goto("/conversations");
+      await page.getByTestId("conversation-list").getByText(CONVERSATION_LEAD_NAME).click();
+      // Reload — not just re-rendering from an already-fetched in-memory
+      // query cache — is the actual point: proves the row is durably
+      // stored, not just optimistically shown.
+      await page.reload();
+      await page.getByTestId("conversation-list").getByText(CONVERSATION_LEAD_NAME).click();
+      await expect(page.getByTestId("conversation-messages").getByText(probeContent)).toBeVisible();
+    } finally {
+      // Self-contained cleanup in addition to global.teardown.ts's full
+      // fixture reset — keeps this one test's side effect from leaking
+      // into any test that runs after it within the same run.
+      await admin
+        .from("messages")
+        .delete()
+        .eq("conversation_id", FIXTURE_IDS.conversationLeadConversation)
+        .eq("content", probeContent);
+    }
   });
 
   test("E: appointments page shows the fixture appointment, and the cancel/restore lifecycle works", async ({

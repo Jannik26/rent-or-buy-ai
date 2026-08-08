@@ -28,17 +28,48 @@ export const QA_COMPANY_ID = "e2a7b36e-d374-4895-99ce-f5b2f21eb993";
  * collide with `gen_random_uuid()`-generated real rows and are
  * unambiguously greppable in the DB if something ever goes wrong. Kept
  * stable across runs (not regenerated per run) so setup is idempotent via
- * upsert-by-id and teardown is a simple delete-by-id. */
+ * upsert-by-id and teardown is a simple delete-by-id.
+ *
+ * Messages themselves are NOT given fixed ids (see seedFixtures) — they're
+ * deleted-and-reinserted by conversation_id on every setup run instead of
+ * upserted, which sidesteps a real footgun: `messages.sequence` is always
+ * (re-)computed server-side by a trigger on INSERT only (see the
+ * conversations migration), so an upsert's UPDATE path would silently skip
+ * re-deriving it — delete+insert avoids ever needing to reason about that. */
 export const FIXTURE_IDS = {
   conversationLead: "e2e00001-0000-0000-0000-000000000001",
   appointmentLead: "e2e00001-0000-0000-0000-000000000002",
   appointment: "e2e00002-0000-0000-0000-000000000001",
+  conversationLeadConversation: "e2e00003-0000-0000-0000-000000000001",
+  appointmentLeadConversation: "e2e00003-0000-0000-0000-000000000002",
 } as const;
 
 const CONVERSATION_LEAD_NAME = "E2E QA Fixture — Conversation Lead";
 const APPOINTMENT_LEAD_NAME = "E2E QA Fixture — Appointment Lead";
 
+/** role→senderType, exactly the mapping the real widget write path uses
+ * (see mapTranscriptRoleToSenderType in conversation-rules.ts) — kept as a
+ * small local literal here rather than importing app code into the E2E
+ * fixture layer (tests/e2e/ deliberately doesn't depend on src/). */
+const CONVERSATION_LEAD_MESSAGES = [
+  { senderType: "ai", content: "Hallo! Wie kann ich Ihnen helfen?" },
+  { senderType: "lead", content: "Ich suche eine 3-Zimmer-Wohnung in Hamburg." },
+  { senderType: "ai", content: "Gerne! In welchem Budget bewegen Sie sich?" },
+  { senderType: "lead", content: "Bis 450.000 Euro, Finanzierung ist vorhanden." },
+] as const;
+
+const APPOINTMENT_LEAD_MESSAGES = [
+  { senderType: "ai", content: "Hallo! Wie kann ich Ihnen helfen?" },
+  { senderType: "lead", content: "Ich hätte gerne einen Besichtigungstermin." },
+] as const;
+
 export async function seedFixtures(admin: SupabaseClient): Promise<void> {
+  // leads.messages (legacy JSONB) is written too, alongside the canonical
+  // tables below — not because anything still reads it (the Conversations/
+  // Lead-Detail UI reads exclusively from conversations/messages now, see
+  // ROADMAP.md), but so this fixture keeps mirroring what a real migrated
+  // production lead actually looks like (both the legacy column and its
+  // canonical counterpart populated), the same shape the backfill produced.
   const { error: leadsError } = await admin.from("leads").upsert(
     [
       {
@@ -53,12 +84,10 @@ export async function seedFixtures(admin: SupabaseClient): Promise<void> {
         intent: "kauf",
         property_type: "3-Zimmer-Wohnung",
         location: "Hamburg",
-        messages: [
-          { role: "assistant", content: "Hallo! Wie kann ich Ihnen helfen?" },
-          { role: "user", content: "Ich suche eine 3-Zimmer-Wohnung in Hamburg." },
-          { role: "assistant", content: "Gerne! In welchem Budget bewegen Sie sich?" },
-          { role: "user", content: "Bis 450.000 Euro, Finanzierung ist vorhanden." },
-        ],
+        messages: CONVERSATION_LEAD_MESSAGES.map((m) => ({
+          role: m.senderType === "lead" ? "user" : "assistant",
+          content: m.content,
+        })),
       },
       {
         id: FIXTURE_IDS.appointmentLead,
@@ -69,15 +98,64 @@ export async function seedFixtures(admin: SupabaseClient): Promise<void> {
         score: "warm",
         score_numeric: 55,
         intent: "miete",
-        messages: [
-          { role: "assistant", content: "Hallo! Wie kann ich Ihnen helfen?" },
-          { role: "user", content: "Ich hätte gerne einen Besichtigungstermin." },
-        ],
+        messages: APPOINTMENT_LEAD_MESSAGES.map((m) => ({
+          role: m.senderType === "lead" ? "user" : "assistant",
+          content: m.content,
+        })),
       },
     ],
     { onConflict: "id" },
   );
   if (leadsError) throw new Error(`seedFixtures: leads upsert failed: ${leadsError.message}`);
+
+  const { error: convError } = await admin.from("conversations").upsert(
+    [
+      {
+        id: FIXTURE_IDS.conversationLeadConversation,
+        lead_id: FIXTURE_IDS.conversationLead,
+        company_id: QA_COMPANY_ID,
+        channel: "website",
+      },
+      {
+        id: FIXTURE_IDS.appointmentLeadConversation,
+        lead_id: FIXTURE_IDS.appointmentLead,
+        company_id: QA_COMPANY_ID,
+        channel: "website",
+      },
+    ],
+    { onConflict: "id" },
+  );
+  if (convError) throw new Error(`seedFixtures: conversations upsert failed: ${convError.message}`);
+
+  // Reset-and-reinsert rather than upsert (see FIXTURE_IDS's doc comment) —
+  // idempotent and side-steps the sequence-on-update footgun entirely.
+  for (const [conversationId, messages] of [
+    [FIXTURE_IDS.conversationLeadConversation, CONVERSATION_LEAD_MESSAGES],
+    [FIXTURE_IDS.appointmentLeadConversation, APPOINTMENT_LEAD_MESSAGES],
+  ] as const) {
+    const { error: deleteError } = await admin
+      .from("messages")
+      .delete()
+      .eq("conversation_id", conversationId);
+    if (deleteError) {
+      throw new Error(
+        `seedFixtures: message reset failed for ${conversationId}: ${deleteError.message}`,
+      );
+    }
+    const { error: insertError } = await admin.from("messages").insert(
+      messages.map((m) => ({
+        conversation_id: conversationId,
+        company_id: QA_COMPANY_ID,
+        sender_type: m.senderType,
+        content: m.content,
+      })),
+    );
+    if (insertError) {
+      throw new Error(
+        `seedFixtures: message insert failed for ${conversationId}: ${insertError.message}`,
+      );
+    }
+  }
 
   // starts_at intentionally in the future and re-computed relative to
   // "now" on every setup run, not a fixed past date — an appointment stuck
@@ -111,9 +189,20 @@ export async function seedFixtures(admin: SupabaseClient): Promise<void> {
 }
 
 export async function cleanupFixtures(admin: SupabaseClient): Promise<void> {
-  // Order matters: appointments reference leads via FK (ON DELETE CASCADE
-  // would handle it anyway, but deleting explicitly here is clearer about
-  // intent and doesn't rely on cascade behavior staying unchanged).
+  // Order matters: children before parents (ON DELETE CASCADE would handle
+  // it anyway, but deleting explicitly here is clearer about intent and
+  // doesn't rely on cascade behavior staying unchanged — same convention
+  // this file already used for appointments before this slice).
+  await admin
+    .from("messages")
+    .delete()
+    .eq("conversation_id", FIXTURE_IDS.conversationLeadConversation);
+  await admin
+    .from("messages")
+    .delete()
+    .eq("conversation_id", FIXTURE_IDS.appointmentLeadConversation);
+  await admin.from("conversations").delete().eq("id", FIXTURE_IDS.conversationLeadConversation);
+  await admin.from("conversations").delete().eq("id", FIXTURE_IDS.appointmentLeadConversation);
   await admin.from("appointments").delete().eq("id", FIXTURE_IDS.appointment);
   await admin.from("leads").delete().eq("id", FIXTURE_IDS.conversationLead);
   await admin.from("leads").delete().eq("id", FIXTURE_IDS.appointmentLead);

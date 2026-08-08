@@ -22,6 +22,7 @@ import {
   dateTimeLocalValueToIso,
   isoToDateTimeLocalValue,
 } from "@/lib/appointments/appointment-rules";
+import { getConversationDetail } from "@/lib/conversations/conversations.functions";
 
 export const Route = createFileRoute("/_authenticated/leads/$leadId")({
   head: () => ({ meta: [{ title: "Lead-Details – EstateAI" }] }),
@@ -60,6 +61,17 @@ function LeadDetailPage() {
   });
   const appointments = appointmentsQuery.data ?? [];
   const currentAppointment = appointments.find((a) => a.status === "scheduled") ?? null;
+
+  // Same server function (and therefore the exact same canonical data) the
+  // Conversations page uses — one source of truth for chat history, never
+  // two different reads that could drift (see ROADMAP.md's Conversations
+  // Foundation entry).
+  const fetchConversationDetail = useServerFn(getConversationDetail);
+  const conversationQuery = useQuery({
+    queryKey: ["conversation-detail", leadId],
+    queryFn: () => fetchConversationDetail({ data: { leadId } }),
+  });
+  const messages = conversationQuery.data?.messages ?? [];
 
   const createFn = useServerFn(createAppointment);
   const updateFn = useServerFn(updateAppointment);
@@ -466,15 +478,15 @@ function LeadDetailPage() {
           <div className="mt-6 rounded-2xl border border-border bg-card p-6">
             <h2 className="font-display text-lg mb-4">Gesprächsverlauf</h2>
             <div className="space-y-3">
-              {(lead.messages ?? []).map((m: { role: string; content: string }, i: number) => (
+              {messages.map((m, i) => (
                 <div
                   key={i}
-                  className={cn("flex", m.role === "user" ? "justify-end" : "justify-start")}
+                  className={cn("flex", m.senderType === "lead" ? "justify-end" : "justify-start")}
                 >
                   <div
                     className={cn(
                       "max-w-[80%] rounded-xl px-3.5 py-2 text-sm leading-relaxed",
-                      m.role === "user"
+                      m.senderType === "lead"
                         ? "bg-primary text-primary-foreground"
                         : "bg-muted text-foreground",
                     )}
@@ -483,7 +495,7 @@ function LeadDetailPage() {
                   </div>
                 </div>
               ))}
-              {(!lead.messages || lead.messages.length === 0) && (
+              {messages.length === 0 && (
                 <div className="text-sm text-muted-foreground">Noch keine Nachrichten.</div>
               )}
             </div>

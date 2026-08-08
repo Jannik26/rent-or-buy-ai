@@ -12,6 +12,7 @@ import { responseTimePhrase } from "@/lib/response-time";
 import { isPlusAddressed, normalizeEmail } from "@/lib/validate-email";
 import { isCompanyAllowedToUseWidget } from "@/lib/billing/widget-access";
 import { DEMO_COMPANY_ID } from "@/lib/demo-company";
+import { syncCanonicalConversation } from "@/lib/conversations/conversations.functions";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -550,6 +551,29 @@ async function persistLeadFromTranscript(args: {
   } else {
     const ins = await supabaseAdmin.from("leads").insert(payload).select("id").maybeSingle();
     finalLeadId = ins.data?.id ?? null;
+  }
+
+  // ---- Canonical Conversations Foundation: dual-write ----
+  // leads.messages above is untouched (still the full-transcript-overwrite
+  // write it always was — zero behavior change there, zero regression
+  // risk). This is purely additive: sync only the messages genuinely new
+  // since last time into the canonical conversations/messages tables (see
+  // conversations.functions.ts's syncCanonicalConversation and
+  // conversation-rules.ts's computeNewTranscriptTurns for why "new since
+  // last time", not the full resent transcript, is what gets inserted).
+  // Isolated in its own try/catch, same as the lead-summary block below —
+  // a canonical-sync failure must never break the widget's actual reply to
+  // the visitor, which has already been streamed by this point.
+  if (finalLeadId) {
+    try {
+      await syncCanonicalConversation(supabaseAdmin, {
+        leadId: finalLeadId,
+        companyId: args.companyId,
+        transcript,
+      });
+    } catch (err) {
+      console.error("[widget] canonical conversation sync error", err);
+    }
   }
 
   // ---- Auto-generate structured Lead-Summary once conversation is meaningful ----
