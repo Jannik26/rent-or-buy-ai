@@ -157,6 +157,31 @@ export async function seedFixtures(admin: SupabaseClient): Promise<void> {
     }
   }
 
+  // One scheduled follow-up (step 1) on the conversation-lead fixture, so
+  // the E2E suite can verify the Lead-Detail follow-up card and its
+  // "Follow-ups stoppen" action against real data — same delete-and-
+  // reinsert-by-conversation_id idempotency pattern as messages above.
+  // after_sequence = 3 matches CONVERSATION_LEAD_MESSAGES' last (0-based)
+  // index (4 messages → indices 0..3).
+  const { error: followupDeleteError } = await admin
+    .from("conversation_followups")
+    .delete()
+    .eq("conversation_id", FIXTURE_IDS.conversationLeadConversation);
+  if (followupDeleteError) {
+    throw new Error(`seedFixtures: follow-up reset failed: ${followupDeleteError.message}`);
+  }
+  const { error: followupInsertError } = await admin.from("conversation_followups").insert({
+    conversation_id: FIXTURE_IDS.conversationLeadConversation,
+    company_id: QA_COMPANY_ID,
+    step: 1,
+    status: "scheduled",
+    scheduled_for: new Date(Date.now() + 2 * 86_400_000).toISOString(),
+    after_sequence: 3,
+  });
+  if (followupInsertError) {
+    throw new Error(`seedFixtures: follow-up insert failed: ${followupInsertError.message}`);
+  }
+
   // starts_at intentionally in the future and re-computed relative to
   // "now" on every setup run, not a fixed past date — an appointment stuck
   // in the past would look wrong in the UI on every re-run.
@@ -193,6 +218,10 @@ export async function cleanupFixtures(admin: SupabaseClient): Promise<void> {
   // it anyway, but deleting explicitly here is clearer about intent and
   // doesn't rely on cascade behavior staying unchanged — same convention
   // this file already used for appointments before this slice).
+  await admin
+    .from("conversation_followups")
+    .delete()
+    .eq("conversation_id", FIXTURE_IDS.conversationLeadConversation);
   await admin
     .from("messages")
     .delete()

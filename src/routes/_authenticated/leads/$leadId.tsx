@@ -23,6 +23,11 @@ import {
   isoToDateTimeLocalValue,
 } from "@/lib/appointments/appointment-rules";
 import { getConversationDetail } from "@/lib/conversations/conversations.functions";
+import {
+  cancelFollowupsForLead,
+  getFollowupsForLead,
+  type FollowupRow,
+} from "@/lib/followups/followups.functions";
 
 export const Route = createFileRoute("/_authenticated/leads/$leadId")({
   head: () => ({ meta: [{ title: "Lead-Details – EstateAI" }] }),
@@ -72,6 +77,29 @@ function LeadDetailPage() {
     queryFn: () => fetchConversationDetail({ data: { leadId } }),
   });
   const messages = conversationQuery.data?.messages ?? [];
+
+  const fetchFollowups = useServerFn(getFollowupsForLead);
+  const followupsQuery = useQuery({
+    queryKey: ["lead-followups", leadId],
+    queryFn: () => fetchFollowups({ data: { leadId } }),
+  });
+  const followups = followupsQuery.data ?? [];
+  const hasOpenFollowups = followups.some((f) => f.status === "scheduled");
+  const cancelFollowupsFn = useServerFn(cancelFollowupsForLead);
+  const [followupsBusy, setFollowupsBusy] = useState(false);
+
+  async function handleStopFollowups() {
+    setFollowupsBusy(true);
+    try {
+      await cancelFollowupsFn({ data: { leadId } });
+      await qc.invalidateQueries({ queryKey: ["lead-followups", leadId] });
+      toast.success("Automatische Nachfassaktionen gestoppt");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Fehler beim Stoppen der Follow-ups.");
+    } finally {
+      setFollowupsBusy(false);
+    }
+  }
 
   const createFn = useServerFn(createAppointment);
   const updateFn = useServerFn(updateAppointment);
@@ -530,6 +558,43 @@ function LeadDetailPage() {
               ))}
             </ul>
           </div>
+
+          {/* Automated follow-ups (Product Track slice 5) — read-only
+              status + an optional stop action, see ROADMAP.md. Nothing
+              renders while there's no sequence at all (a lead whose first
+              AI turn hasn't happened yet, or whose conversation never had
+              one scheduled) — same "don't show an empty state for
+              something that was never applicable" convention as the
+              appointment card above. */}
+          {followups.length > 0 && (
+            <div className="rounded-2xl border border-border bg-card p-6 text-sm">
+              <div className="flex items-center justify-between gap-2 mb-3">
+                <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                  Automatische Nachfassaktionen
+                </div>
+                {hasOpenFollowups && (
+                  <button
+                    disabled={followupsBusy}
+                    onClick={handleStopFollowups}
+                    className="text-xs font-medium text-muted-foreground hover:text-destructive disabled:opacity-50"
+                  >
+                    Follow-ups stoppen
+                  </button>
+                )}
+              </div>
+              <ul className="space-y-2.5">
+                {followups.map((f) => (
+                  <li key={f.id} className="flex items-start justify-between gap-2">
+                    <div>
+                      <div className="font-medium">Schritt {f.step}</div>
+                      <div className="text-xs text-muted-foreground">{formatFollowupTiming(f)}</div>
+                    </div>
+                    <FollowupStatusBadge status={f.status} />
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </aside>
       </div>
     </div>
@@ -570,4 +635,59 @@ function Field({ label, value }: { label: string; value: string | null | undefin
       <dd className="mt-0.5 text-foreground">{value || "—"}</dd>
     </div>
   );
+}
+
+const FOLLOWUP_STATUS_LABELS: Record<FollowupRow["status"], string> = {
+  scheduled: "Geplant",
+  processing: "Wird gesendet…",
+  sent: "Gesendet",
+  cancelled: "Gestoppt",
+  failed: "Fehlgeschlagen",
+  skipped: "Übersprungen",
+};
+
+const FOLLOWUP_STATUS_STYLES: Record<FollowupRow["status"], string> = {
+  scheduled: "bg-accent text-foreground",
+  processing: "bg-accent text-foreground",
+  sent: "bg-success/15 text-success",
+  cancelled: "bg-muted text-muted-foreground",
+  failed: "bg-destructive/15 text-destructive",
+  skipped: "bg-muted text-muted-foreground",
+};
+
+function FollowupStatusBadge({ status }: { status: FollowupRow["status"] }) {
+  return (
+    <span
+      className={cn(
+        "shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium",
+        FOLLOWUP_STATUS_STYLES[status],
+      )}
+    >
+      {FOLLOWUP_STATUS_LABELS[status]}
+    </span>
+  );
+}
+
+/** Deliberately not formatDate (dashboard.tsx) — that helper reads
+ * "vor Xd"/"Heute"/"Gestern", built for past timestamps, and would show a
+ * nonsensical negative day count for a follow-up scheduled in the future.
+ * A sent/cancelled/failed row instead shows when that actually happened
+ * (sent_at/cancelled_at/failed_at), never the now-irrelevant original
+ * scheduled_for. */
+function formatFollowupTiming(f: FollowupRow): string {
+  const iso =
+    f.status === "sent"
+      ? f.sentAt
+      : f.status === "cancelled"
+        ? f.cancelledAt
+        : f.status === "failed"
+          ? f.failedAt
+          : f.scheduledFor;
+  if (!iso) return "—";
+  const prefix = f.status === "scheduled" || f.status === "processing" ? "Geplant für" : "";
+  const formatted = new Date(iso).toLocaleString("de-DE", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  });
+  return prefix ? `${prefix} ${formatted}` : formatted;
 }

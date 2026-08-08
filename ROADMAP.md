@@ -4,7 +4,8 @@
 (Appointments) + Slice 2 (Analytics V1) + Slice 3 (Conversations V1) +
 Verification-Track-Slice 1 (persistierte Playwright-E2E-Basis) +
 Product-Track-Slice 4 (Conversations Foundation — kanonische
-Conversations-/Messages-Domain) · Kanonisches Planungsdokument.**
+Conversations-/Messages-Domain) + Slice 5 (Automated Lead Follow-ups
+Foundation) · Kanonisches Planungsdokument.**
 
 Dieses Dokument ersetzt `.lovable/plan.md` als laufende Roadmap. Es wird bei
 jeder größeren strategischen oder architektonischen Entscheidung aktualisiert
@@ -111,7 +112,7 @@ Branch/Kontext; **Integration in EstateAI selbst** ist PLANNED)
 | Conversations-Ansicht | ✅ DONE (2026-08-08, Product-Track-Slice 3 „Conversations V1" + Slice 4 „Conversations Foundation") | Master-Detail-Ansicht (Liste links, Verlauf rechts, responsive), Suche (Name), Filter (Status/Score), Empty States — seit Slice 4 auf der **kanonischen** `conversations`/`messages`-Domain statt `leads.messages`-JSONB (siehe Abschnitt 7). Sortierung nach `conversations.last_message_at` (echte Spalte, per Trigger gepflegt), Reihenfolge innerhalb einer Conversation nach `sequence` (nie `created_at` — siehe Risiko 10, jetzt gelöst). Lead-Detailseite liest denselben Server-Function-Aufruf, keine zweite Wahrheit mehr. Weiterhin kein Schreibzugriff in der UI selbst (nur der Widget-Chat schreibt, jetzt in die kanonische Domain, siehe unten) |
 | Analytics-Dashboard | ✅ DONE (2026-08-07, Product-Track-Slice 2, „Analytics V1") | Echte, tenant-isolierte Kennzahlen statt Platzhalter: Lead-/Termin-KPIs, Zeitfilter (7/30/90 Tage/gesamt), Trends ggü. Vorperiode, 3-stufiger Funnel, Status-/Score-Verteilung, Tagesverläufe (nur für endliche Zeitfenster). Serverseitige Aggregation über eine RLS-gebundene `SECURITY INVOKER`-SQL-Funktion (`analytics_summary`, kein `company_id`-Parameter — Tenant-Isolation entsteht ausschließlich durch RLS), keine PII in der Antwort. `leads.status='termin'` ohne echten Termin wird bewusst **nicht** in „Aktive Termine"/Conversion mitgezählt, sondern separat als Altbestand ausgewiesen (siehe Abschnitt 9, Punkt 9). 12 SQL-Korrektheits-/RLS-Assertions gegen die echte DB (`supabase/tests/analytics_rls.sql`), 22 Unit-Tests für die reinen Kennzahl-Regeln |
 | E2E-Testinfrastruktur (Playwright) | ✅ DONE (2026-08-08, Verification-Track-Slice 1) | `tests/e2e/` — Core-Journey-Suite (Auth-Guard, Dashboard, Leads inkl. Tenant-Isolation, Conversations, Appointments inkl. Storno-/Wiederherstell-Lifecycle, Analytics inkl. Zeitfensterwechsel, Navigation) + ein Mobile-Smoke-Test. Dedizierter QA-Mandant, deterministische/idempotente Fixtures per fixer ID, Auth per Admin-generiertem Magic-Link + `storageState` (kein neuer Signup). 10/10 grün, dreifach reproduzierbar. Ergänzt, ersetzt nicht, die bestehenden SQL-RLS-Tests. Version gepinnt auf `1.45.0` wegen macOS-Ventura-Browser-Binary-Inkompatibilität neuerer Playwright-Versionen auf dieser Entwicklungsmaschine |
-| Automatisierte Follow-ups | ⏳ PLANNED | Nicht implementiert (max. 3 Follow-ups aus CLAUDE.md ist eine Regel, kein Code) |
+| Automatisierte Follow-ups | 🟡 PARTIAL (2026-08-08, Product-Track-Slice 5, „Automated Lead Follow-ups Foundation") | Engine vollständig: kanonische `conversation_followups`-Tabelle, DB-verankertes Max-3-Limit (CHECK + UNIQUE, kein reines UI-Limit), Scheduling (24h/72h/144h-Staffelung), race-sicherer Claim-Worker (`processDueFollowups`), Abbruch bei Lead-Antwort oder geschlossener Conversation, deterministische Templates, minimale UI (Status + Stopp-Button). **Noch nicht verbunden:** kein Scheduler/Cron ruft den Worker automatisch auf (kein `pg_cron`/keine Edge Function im Projekt — siehe Abschnitt 9/10); keine echten externen Kanäle (E-Mail/WhatsApp/Telefon) — „gesendet" bedeutet aktuell ausschließlich ein kanonischer `sender_type='ai'`-Eintrag im Conversation-Verlauf |
 | DSGVO-Löschfristen | ⏳ PLANNED | `data-retention.ts` definiert Zielwerte (30 Tage Demo, 6–12 Monate ohne Abschluss) explizit als **noch nicht durchgesetzt** |
 | AI-Provider-Anbindung | ✅ DONE (aber nicht abstrahiert) | Direkt `@ai-sdk/anthropic` via Vercel AI SDK (`ai`-Package), kein Gateway/Abstraktionslayer — funktioniert, aber Wechsel des Modells/Anbieters erfordert Codeänderung an einer Stelle (`ai-gateway.server.ts`, aktuell nur ein dünner Wrapper) |
 | Agent/Widget-ID-Struktur (RE/MAX-Vorbereitung) | ⏳ PLANNED | Nur `company_id` existiert; `agent_id`/`widget_id` noch nicht im Schema — siehe Abschnitt 7 |
@@ -409,6 +410,27 @@ werden können, statt auf Phase A zu warten:
   Follow-ups, WhatsApp/E-Mail/Telefon-Kanäle, OpenClaw-Integration, Löschen
   der Legacy-JSONB-Spalte (siehe Abschnitt 7 für den geplanten
   Cleanup-Schritt)
+- ✅ **DONE (2026-08-08, Slice 5, „Automated Lead Follow-ups Foundation")**
+  Kanalunabhängige Follow-up-Engine auf der kanonischen
+  Conversations-Domain — vollständige Details in Abschnitt 7. Kurzfassung:
+  neue `conversation_followups`-Tabelle (Max-3-Limit als Lifetime-Cap, DB-
+  erzwungen über CHECK `step between 1 and 3` + UNIQUE
+  `(conversation_id, step)`, nicht nur UI-seitig), Scheduling aller 3
+  Schritte im Voraus bei erster unbeantworteter KI-Nachricht (24h/72h/
+  144h-Staffelung ab CLAUDE.md-Default), race-sicherer Claim-Worker
+  (`processDueFollowups`, atomare `UPDATE ... WHERE status='scheduled'`),
+  automatischer Abbruch bei Lead-Antwort (proaktiv + erneute Prüfung im
+  Worker als Sicherheitsnetz) oder geschlossener Conversation,
+  deterministische Templates (kein Live-KI-Aufruf), minimale UI (Lead-
+  Detail: Status/Zeitpunkt pro Schritt + „Follow-ups stoppen"). 15/15
+  RLS-Assertions grün (`supabase/tests/conversation_followups_rls.sql`),
+  echter DB-Roundtrip-Integrationstest gegen die verbundene Projekt-DB.
+  Vorab: read-only Untersuchung des in Slice 4 dokumentierten
+  Datenverlust-Befunds (Risiko 13) — kein Löschpfad gefunden, siehe
+  Abschnitt 9. Bewusst nicht Teil dieses Slices: echte externe Kanäle
+  (E-Mail/WhatsApp/Telefon), automatischer Scheduler/Cron für den Worker
+  (kein `pg_cron`/keine Edge Function im Projekt), OpenClaw-Integration,
+  Kalender-Sync
 - Lead-Pipeline-Verbesserungen, weitere Maklerfunktionen
 - Beginn von Phase C (Matching/Vergleich/Kosten) kann parallel geplant
   werden, sobald das Immobilien-Datenmodell (Abschnitt 7) steht
@@ -631,6 +653,81 @@ Migration entfernt und `persistLeadFromTranscript` auf einen reinen
 Kanonisch-Write umgestellt werden — bewusst nicht in diesem Slice, da noch
 kein Beobachtungsfenster existiert.
 
+**`conversation_followups` (✅ DONE, 2026-08-08, Slice 5, „Automated Lead
+Follow-ups Foundation"):** kanalunabhängige Follow-up-Engine auf der
+kanonischen Conversations-Domain. `id`, `conversation_id`, `company_id`
+(server-seitig per Trigger aus `conversation_id` abgeleitet, nie
+Client-Input — exakt das `tg_set_message_company`-Muster), `step`
+(`smallint`, CHECK 1–3), `status`
+(`scheduled`/`processing`/`sent`/`cancelled`/`failed`/`skipped`),
+`scheduled_for`, `after_sequence` (der `messages.sequence`-Stand zum
+Planungszeitpunkt — die Grundlage für die erneute Prüfung „hat der Lead
+seitdem geantwortet?" beim Versand), `sent_at`/`cancelled_at`/`failed_at`,
+`skip_reason`/`error_code`, `message_id` (die tatsächlich erzeugte
+kanonische Nachricht, sobald versendet).
+
+*Max-3-Limit, technisch abgesichert, nicht nur UI-seitig:* `step` ist per
+CHECK auf 1–3 begrenzt, `(conversation_id, step)` ist UNIQUE — eine
+Conversation kann strukturell nie mehr als 3 Follow-up-Zeilen haben, ganz
+gleich was die Anwendungslogik tut. **Bewusste Produktentscheidung:** das
+ist ein **Lifetime-Cap pro Conversation**, nicht „3 pro Stille-Episode" —
+sobald einmal eine Sequenz geplant wurde (auch wenn sie durch eine
+Lead-Antwort abgebrochen wurde), wird für dieselbe Conversation nie wieder
+eine neue Sequenz geplant. Das ist die konservative Lesart von CLAUDE.md
+„keine aggressive Nachfasslogik", dokumentiert hier bewusst als
+Designentscheidung, nicht als Versehen — eine spätere Produktentscheidung
+könnte das ändern (z. B. „3 pro Episode"), ist aber ein bewusster,
+separater Schritt.
+
+*Scheduling:* alle 3 Schritte werden auf einmal geplant, sobald die erste
+noch unbeantwortete KI-Nachricht einer Conversation auftritt (gestaffelt:
+Schritt 1 nach 24h, Schritt 2 nach weiteren 48h, Schritt 3 nach weiteren
+72h ab demselben Ausgangspunkt — CLAUDE.md-Default, da keine spezifischeren
+Werte vorgegeben sind; zentral in `followup-rules.ts` definiert, keine
+Settings-UI). `ensureFollowupsForConversation` ist idempotent — ein
+zweiter Aufruf für dieselbe Conversation ist ein No-op.
+
+*Abbruch bei Lead-Antwort:* zweistufig — proaktiv
+(`cancelOpenFollowupsOnLeadReply`, direkt beim Schreiben einer neuen
+`sender_type='lead'`-Nachricht) und als Sicherheitsnetz erneut im Worker
+unmittelbar vor dem Versand (Vergleich `after_sequence` gegen die aktuell
+neueste `lead`-Nachricht) — „Regeln erneut prüfen", nicht nur einmal beim
+Planen. Ebenso: eine geschlossene Conversation (`status='closed'`)
+verhindert sowohl neues Planen als auch Versand bereits geplanter
+Schritte.
+
+*Worker (`processDueFollowups`):* race-sicher durch eine einzelne atomare
+`UPDATE ... WHERE status = 'scheduled' AND scheduled_for <= now() RETURNING
+*` — Postgres' eigene Zeilensperren-Semantik verhindert von selbst, dass
+zwei gleichzeitige Aufrufe dieselbe Zeile doppelt verarbeiten, ganz ohne
+Advisory Locks. **Noch nicht an einen automatischen Scheduler
+angeschlossen** — im Projekt existiert weder `pg_cron` noch eine Edge
+Function (geprüft, siehe Abschnitt 9/10); der Worker ist vollständig
+fertig, getestet und aufrufbereit, wird aber aktuell nur von Tests direkt
+aufgerufen.
+
+*Delivery-Abstraktion:* `FollowupDeliveryAdapter`-Interface, austauschbar
+für spätere echte Kanäle. Die einzige in diesem Slice existierende
+Implementierung (`canonicalMessageDeliveryAdapter`) „versendet" einen
+Follow-up, indem er ihn als normale kanonische `sender_type='ai'`-Nachricht
+über den bestehenden zentralen `appendMessages`-Pfad schreibt — kein
+zweiter Message-Schreibpfad, kein externer Kanal, keine WhatsApp-/
+E-Mail-/Telefon-Anbindung, kein neues Package installiert.
+
+*Templates:* deterministisch, fest definiert (`followup-rules.ts`), kein
+Live-KI-Aufruf — drei kurze, freundliche, nicht-aufdringliche Texte
+(Schritt 3 benennt sich selbst als letzte automatische Nachricht).
+
+*UI:* Lead-Detail zeigt pro Schritt Status + Zeitpunkt (geplant/gesendet/
+gestoppt) sowie einen „Follow-ups stoppen"-Button, solange noch etwas
+`scheduled` ist — serverseitig autorisiert über dieselbe RLS-Policy wie
+das Lesen, keine rein lokale UI-Änderung. Keine neue Settings-Seite.
+
+*Legacy-Verhalten:* ausschließlich kanonisch geschrieben, kein Dual-Write
+in `leads.messages` für Follow-up-Inhalte — Risiko 12 (Dual-Write-Drift)
+wird durch dieses Slice nicht vergrößert, da Follow-ups nur die kanonische
+Seite berühren.
+
 Für kommende Phasen wahrscheinlich nötig (grobe Skizze, vor Umsetzung im
 Detail zu planen):
 
@@ -643,7 +740,7 @@ Detail zu planen):
 | `furniture_items` ("Meine Möbel") | D | Interessent | wie oben | Pflichtfelder: Name, Kategorie, Breite, Tiefe, Höhe. Optional (später): Foto, 3D-Asset, Material/Farbe, Demontierbarkeit |
 | `fit_checks` (Ergebnis, nicht zwingend eigene Tabelle) | D | Interessent | wie oben | Ergebnis „passt in Raum?", sinnvolle Platzierung, Laufwege-Erhalt, Mehrfach-Möbel-Kombination; Tür-/Zugangsprüfung nur bei ausreichend verlässlichen Maßen — sonst als „nicht geprüft" kennzeichnen, nicht raten |
 | ~~`conversation_threads` + `messages`~~ | ~~F~~ | `company_id` | wie leads | ✅ **DONE, aus Phase F vorgezogen** — siehe oben, jetzt `conversations`/`messages`, bereits kanalvorbereitet |
-| `workflows`/`automation_runs` | G | `company_id` | wie leads | Retry-/Fehlerzustände, Kosten pro Lauf |
+| `workflows`/`automation_runs` | G | `company_id` | wie leads | Retry-/Fehlerzustände, Kosten pro Lauf — `conversation_followups` (Slice 5, siehe oben) deckt den Follow-up-Spezialfall bereits ab, ein generisches `workflows`-Modell bleibt für andere Automatisierungen offen |
 
 **Omnichannel-Adapter-Prinzip (Phase F, Datenmodell bereits vorbereitet,
 siehe oben):** externe Systeme wie OpenClaw dürfen künftig als
@@ -656,12 +753,12 @@ niemals `External Channel → eigene Conversation-DB → EstateAI liest nur
 mit`. Kein Channel wird in diesem Slice angebunden — nur das Datenmodell
 verträgt es bereits ohne weitere Migration.
 
-**Follow-up-Vorbereitung (Phase G, keine Automation in diesem Slice):**
-`messages.sender_type` unterscheidet bereits `lead`/`ai`/`agent`/`system` —
-ausreichend, um später zwischen einer normalen KI-Antwort und einer
-automatisierten Follow-up-Nachricht zu unterscheiden, falls das relevant
-wird (z. B. über `system` oder einen zusätzlichen Wert). Keine
-Automation-Engine, keine Trigger, kein Scheduler in diesem Slice.
+**Follow-ups (Phase G) — ✅ Engine DONE seit Slice 5, siehe oben.** Die in
+Slice 4 vorbereitete `messages.sender_type`-Unterscheidung
+(`lead`/`ai`/`agent`/`system`) wird von der Follow-up-Engine bereits
+genutzt (Follow-ups werden als `sender_type='ai'` geschrieben). Weiterhin
+offen: automatischer Scheduler/Cron für `processDueFollowups` (siehe
+Risiko 14) und echte externe Kanäle.
 
 Alle mit personenbezogenen Daten (Interessenten-Kriterien, Möbel-Fotos,
 Telefon-Transkripte) brauchen vor Umsetzung: Retention-Policy analog
@@ -836,29 +933,59 @@ Kriterien zurückführbar sein (siehe Beispiel in Phase C).
     korrektes, gewolltes Verhalten, keine Fehlfunktion) — aber der Nutzer
     sollte wissen, dass 2 Leads zwischen Sessionstart und -ende
     verschwunden sind, falls das nicht beabsichtigt war.
+    **Update Slice 5:** vor Beginn dieses Slices erneut (read-only)
+    untersucht — `DELETE FROM leads`/`.delete()`-Aufrufe im gesamten
+    Code, Trigger auf `leads`, alle `public`-Schema-Funktionen (`pg_proc`),
+    `pg_cron`-Extension (nicht installiert), verfügbare Postgres-Logs. Kein
+    Löschpfad gefunden — Company-/User-Anzahl unverändert konsistent (4
+    Companies, 3 Auth-User), keine Cascade-Löschung über eine Firma
+    plausibel. Leads-/Message-/Conversation-Anzahl am Ende von Slice 5
+    identisch zum Stand am Ende von Slice 4 (23/166/23) — **kein weiterer
+    Datenverlust** während dieser Session. Bleibt ungeklärt, aber nicht
+    blockierend; externe/parallele Aktivität weiterhin die plausibelste,
+    unbewiesene Erklärung.
+14. **`processDueFollowups` ist nicht an einen automatischen Scheduler
+    angeschlossen** (neu, Slice 5) — der Worker selbst ist vollständig
+    fertig, race-sicher und getestet (siehe Abschnitt 7), aber es existiert
+    im Projekt weder `pg_cron` (Extension nicht installiert, geprüft) noch
+    eine Supabase Edge Function, die ihn periodisch aufrufen würde.
+    Follow-ups werden aktuell nur geplant (Zeilen in
+    `conversation_followups` entstehen korrekt), aber ohne einen externen
+    Trigger nie tatsächlich versendet. Bewusst nicht in diesem Slice
+    gelöst — Scheduler-Infrastruktur einzuführen (Extension aktivieren
+    oder eine Edge Function deployen) ist eine eigene, größere
+    Infrastrukturentscheidung mit eigenem Risiko, siehe Abschnitt 10.
+15. **Max-3-Follow-ups als Lifetime-Cap, nicht pro Episode** (offene
+    Produktentscheidung, dokumentiert in Abschnitt 7) — sobald eine
+    Follow-up-Sequenz einmal für eine Conversation existiert (auch wenn
+    durch eine Lead-Antwort abgebrochen), wird nie wieder eine neue
+    geplant, selbst wenn der Lead Monate später erneut länger nicht
+    antwortet. Bewusst konservative Lesart von CLAUDE.md „keine aggressive
+    Nachfasslogik", **kein** Bug — aber eine Stelle, an der ein Makler
+    später berechtigt anderer Meinung sein könnte („nach einer neuen
+    Interaktion sollte wieder nachgefasst werden dürfen"). Ändern wäre eine
+    kleine, isolierte Anpassung an `shouldScheduleSequence`
+    (`followup-rules.ts`), aber eine bewusste Produktentscheidung, kein
+    Auto-Fix.
 
 ---
 
 ## 10. Empfehlung: nächster Schritt
 
-**Update 2026-08-08 (Product-Track-Slice 4, „Conversations Foundation"):**
-explizit vom Auftraggeber angefordert, außerhalb der Reihenfolge dieser
-Empfehlung (die zuvor Follow-ups vorschlug) — die kanonische
-`conversations`/`messages`-Domain ist jetzt umgesetzt, getestet und
-commitet (siehe Abschnitt 6/7). Der Product-Track-Dreiklang
-(`appointments`, Analytics V1, Conversations V1/Foundation) **und** die
-persistierte Playwright-E2E-Basis (Track B) sind damit alle vier
-umgesetzt. Rest dieses Abschnitts bleibt als Empfehlung für die
-**weiteren** Schritte stehen — weiterhin **nicht** Teil eines bereits
-erteilten Auftrags, außer explizit bestätigt:
+**Update 2026-08-08 (Product-Track-Slice 5, „Automated Lead Follow-ups
+Foundation"):** die zuvor hier empfohlene Follow-up-Engine ist jetzt
+umgesetzt (siehe Abschnitt 6/7) — kanonische `conversation_followups`-
+Tabelle, DB-erzwungenes Max-3-Limit, Scheduling, race-sicherer Worker,
+Abbruch bei Lead-Antwort/geschlossener Conversation, minimale UI. **Noch
+kein automatischer Versand**, weil kein Scheduler den Worker aufruft
+(Risiko 14) — das ist jetzt der unmittelbarste Lücken-Schließer, bevor
+diese Funktion für einen Makler tatsächlich spürbar wird. Rest dieses
+Abschnitts bleibt als Empfehlung für die **weiteren** Schritte stehen —
+weiterhin **nicht** Teil eines bereits erteilten Auftrags, außer explizit
+bestätigt:
 
 **Kann sofort parallel starten (keine Abhängigkeiten untereinander):**
 
-- *Product Track (Track A):* automatisierte, begrenzte Lead-Follow-ups
-  (max. 3, siehe CLAUDE.md-Regel und Empfehlung unten) — bislang reine
-  Regel ohne Code, jetzt zusätzlich durch `messages.sender_type`
-  (`lead`/`ai`/`agent`/`system`, siehe Abschnitt 7) besser vorbereitet als
-  vor Slice 4
 - *Production Track:* Rechtstexte (Impressum/Datenschutz) mit echten
   Angaben füllen — kleinster Aufwand, größtes Compliance-Risiko wenn offen
 - *Konzeptarbeit:* Immobilien-Datenmodell (Phase C, `properties`-Entität)
@@ -885,28 +1012,33 @@ erteilten Auftrags, außer explizit bestätigt:
   Abschnitt 7) — kein akuter Blocker, die App liest die Legacy-Spalte
   bereits nirgends mehr
 
-**Konkreter nächster Schritt (Track A / Product Track), wenn nur einer
-gewählt werden soll: automatisierte, begrenzte Lead-Follow-ups (max. 3,
-CLAUDE.md-Regel).** Begründung, priorisiert nach echtem Makler-Mehrwert,
-nicht nach technischer Einfachheit: CLAUDE.md nennt das Kernziel „aus
-anonymen Website-Besuchern sollen qualifizierte Immobilien-Leads werden" —
-heute endet der Flow beim gespeicherten Lead; ob und wann ein Makler
-reagiert, ist reine Handarbeit. Ein Lead, der nach dem ersten Chat nicht
-sofort antwortet, verliert ohne Follow-up an Dringlichkeit und Score-Aktua-
-lität; das ist der Punkt im Flow mit dem größten Leck zwischen „Lead
-erfasst" und „Lead wird tatsächlich zum Geschäft". Datenmodell und
-Lead-Scoring (`lead-summary.server.ts`, `scoreFromData`) stehen bereits,
-`appointments`/Analytics können die Wirkung sofort messen (Conversion-
-Funnel existiert schon), und die Regel ist in CLAUDE.md bereits bewusst
-begrenzt (max. 3, nicht aggressiv) — kein neues Datenmodell-Fass, klar
-abgegrenzter Schnitt. Mit Slice 4 jetzt sogar leichter umsetzbar als vorher
-gedacht: eine Follow-up-Nachricht ist einfach ein `appendMessages`-Aufruf
-mit `sender_type` passend zur Herkunft, keine neue Tabelle nötig.
-Alternative, ebenfalls hochwertige Kandidaten: Termin-Erinnerungen/
-Kalender-Sync (Ausbau der bestehenden `appointments`-Tabelle, Phase B) —
-geringerer Hebel auf Lead-Konversion, da er erst nach einem bereits
-vereinbarten Termin greift, aber ähnlich klein und direkt aus vorhandenen
-Daten umsetzbar.
+**Konkreter nächster Schritt, wenn nur einer gewählt werden soll —
+Empfehlung, nicht Auftrag: Scheduler-Anbindung für `processDueFollowups`
+(Risiko 14).** Begründung, priorisiert nach echtem Makler-Mehrwert: die
+Follow-up-Engine aus diesem Slice hat aktuell **null** sichtbare Wirkung
+für einen Makler, solange niemand `processDueFollowups` aufruft — geplante
+Zeilen entstehen, aber es wird nie tatsächlich nachgefasst. Das ist der
+unmittelbarste, kleinste Schritt, um den in diesem Slice bereits
+geschaffenen Wert tatsächlich auszulösen, kein neues Konzept: entweder
+Supabase `pg_cron` aktivieren (eine `SELECT cron.schedule(...)`-Migration,
+die minütlich/alle 5 Minuten eine SQL-Funktion aufruft, die ihrerseits
+`processDueFollowups`-Logik ausführt — dafür müsste ein Teil der
+TypeScript-Logik als SQL-Funktion nachgebaut oder per `pg_net`/Edge
+Function aufgerufen werden) oder eine Supabase Edge Function mit externem
+Cron-Trigger deployen. Beides ist eine **eigene Infrastrukturentscheidung**
+mit eigenem Risiko (neue laufende Kosten/Komplexität, erste Cron-
+Infrastruktur im Projekt überhaupt) — bewusst nicht in Slice 5 mitgelöst,
+sollte aber vor einer echten externen Kanalintegration (E-Mail/WhatsApp)
+stehen, da diese ohnehin denselben Worker/Scheduler brauchen wird.
+Alternative, ebenfalls sinnvolle Kandidaten für Slice 6: (a) ein echter
+Delivery-Adapter für **einen** Kanal (E-Mail zuerst — geringste
+Einstiegshürde, kein Telefonie-Anbieter nötig), sobald der Scheduler steht;
+(b) Termin-Erinnerungen/Kalender-Sync (Ausbau der bestehenden
+`appointments`-Tabelle, Phase B) — unabhängig vom Follow-up-Scheduler,
+ähnlich klein, aber geringerer Hebel auf Neukonversion. Die konkrete
+Entscheidung wird hier bewusst **nicht** vorweggenommen — CLAUDE.md
+verlangt für größere Änderungen einen Plan vor der Umsetzung, und die
+Scheduler-Frage (pg_cron vs. Edge Function) ist genau so ein Fall.
 
 Diese Empfehlung wird hier **nicht automatisch umgesetzt** — das ist die
 nächste, separat zu bestätigende Aufgabe.

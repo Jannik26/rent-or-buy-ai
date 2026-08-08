@@ -163,6 +163,82 @@ export type Database = {
         };
         Relationships: [];
       };
+      conversation_followups: {
+        Row: {
+          after_sequence: number;
+          cancelled_at: string | null;
+          company_id: string;
+          conversation_id: string;
+          created_at: string;
+          error_code: string | null;
+          failed_at: string | null;
+          id: string;
+          message_id: string | null;
+          scheduled_for: string;
+          sent_at: string | null;
+          skip_reason: string | null;
+          status: string;
+          step: number;
+          updated_at: string;
+        };
+        Insert: {
+          after_sequence: number;
+          cancelled_at?: string | null;
+          company_id: string;
+          conversation_id: string;
+          created_at?: string;
+          error_code?: string | null;
+          failed_at?: string | null;
+          id?: string;
+          message_id?: string | null;
+          scheduled_for: string;
+          sent_at?: string | null;
+          skip_reason?: string | null;
+          status?: string;
+          step: number;
+          updated_at?: string;
+        };
+        Update: {
+          after_sequence?: number;
+          cancelled_at?: string | null;
+          company_id?: string;
+          conversation_id?: string;
+          created_at?: string;
+          error_code?: string | null;
+          failed_at?: string | null;
+          id?: string;
+          message_id?: string | null;
+          scheduled_for?: string;
+          sent_at?: string | null;
+          skip_reason?: string | null;
+          status?: string;
+          step?: number;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "conversation_followups_company_id_fkey";
+            columns: ["company_id"];
+            isOneToOne: false;
+            referencedRelation: "companies";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "conversation_followups_conversation_id_fkey";
+            columns: ["conversation_id"];
+            isOneToOne: false;
+            referencedRelation: "conversations";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "conversation_followups_message_id_fkey";
+            columns: ["message_id"];
+            isOneToOne: false;
+            referencedRelation: "messages";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       conversations: {
         Row: {
           channel: string;

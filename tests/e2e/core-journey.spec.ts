@@ -89,6 +89,31 @@ test.describe("Core journey (authenticated as the QA/E2E test tenant)", () => {
     expect(errors, `console errors on /leads: ${errors.join("\n")}`).toEqual([]);
   });
 
+  test("C2: lead detail shows the scheduled follow-up and the stop action works", async ({
+    page,
+  }) => {
+    // Own test (not folded into C) so a failure here can't be confused with
+    // the tenant-isolation assertions above — navigates directly rather
+    // than via a click, same convention as D2.
+    const errors = trackConsoleErrors(page);
+    await page.goto(`/leads/${FIXTURE_IDS.conversationLead}`);
+    await expect(page.getByRole("heading", { name: CONVERSATION_LEAD_NAME })).toBeVisible();
+
+    await expect(page.getByText("Automatische Nachfassaktionen")).toBeVisible();
+    await expect(page.getByText("Schritt 1")).toBeVisible();
+    await expect(page.getByText("Geplant", { exact: true })).toBeVisible();
+
+    await page.getByRole("button", { name: "Follow-ups stoppen" }).click();
+    // exact: true — the success toast's text ("...gestoppt") is also a
+    // case-insensitive substring match for "Gestoppt", ambiguous otherwise.
+    await expect(page.getByText("Gestoppt", { exact: true })).toBeVisible();
+    // The stop button only shows while something is still 'scheduled' — it
+    // must disappear once the only row has been cancelled.
+    await expect(page.getByRole("button", { name: "Follow-ups stoppen" })).not.toBeVisible();
+
+    expect(errors, `console errors on lead detail: ${errors.join("\n")}`).toEqual([]);
+  });
+
   test("D: conversations page shows real message history, search and a filter work", async ({
     page,
   }) => {

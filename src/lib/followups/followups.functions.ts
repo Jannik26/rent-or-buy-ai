@@ -1,0 +1,429 @@
+// Central Automated Lead Follow-ups data layer (Product Track slice 5, see
+// ROADMAP.md). Same two-privilege-level split as
+// src/lib/conversations/conversations.functions.ts:
+//   - getFollowupsForLead / cancelFollowupsForLead are createServerFn +
+//     requireSupabaseAuth (RLS-enforced, NOT service role) — the only way
+//     the dashboard reads/cancels follow-ups.
+//   - ensureFollowupsForConversation / cancelOpenFollowupsOnLeadReply /
+//     handleFollowupsAfterMessages / processDueFollowups are plain
+//     functions taking a client parameter, deliberately not importing
+//     supabaseAdmin themselves (this file ships to the client bundle, see
+//     conversations.functions.ts's header for the full explanation).
+//     widget.chat.ts calls handleFollowupsAfterMessages with its own
+//     supabaseAdmin client; a future scheduler would call
+//     processDueFollowups the same way (see the "not yet wired to an
+//     automatic scheduler" note in ROADMAP.md — no pg_cron/edge function
+//     exists in this project yet, so nothing invokes this on a timer today
+//     — it is called directly by tests and is ready to be invoked by one).
+import { createServerFn } from "@tanstack/react-start";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { z } from "zod";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
+import type { Database } from "@/integrations/supabase/types";
+import { appendMessages } from "@/lib/conversations/conversations.functions";
+import type { MessageSenderType } from "@/lib/conversations/conversation-rules";
+import {
+  FOLLOWUP_STEPS,
+  computeScheduledFor,
+  getFollowupTemplate,
+  shouldScheduleSequence,
+  shouldSendFollowup,
+  type FollowupStatus,
+  type FollowupStep,
+} from "@/lib/followups/followup-rules";
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export type FollowupRow = {
+  id: string;
+  conversationId: string;
+  step: FollowupStep;
+  status: FollowupStatus;
+  scheduledFor: string;
+  sentAt: string | null;
+  cancelledAt: string | null;
+  failedAt: string | null;
+  skipReason: string | null;
+};
+
+function toFollowupRow(row: {
+  id: string;
+  conversation_id: string;
+  step: number;
+  status: string;
+  scheduled_for: string;
+  sent_at: string | null;
+  cancelled_at: string | null;
+  failed_at: string | null;
+  skip_reason: string | null;
+}): FollowupRow {
+  return {
+    id: row.id,
+    conversationId: row.conversation_id,
+    step: row.step as FollowupStep,
+    status: row.status as FollowupStatus,
+    scheduledFor: row.scheduled_for,
+    sentAt: row.sent_at,
+    cancelledAt: row.cancelled_at,
+    failedAt: row.failed_at,
+    skipReason: row.skip_reason,
+  };
+}
+
+// ============================================================================
+// Reads/cancel — authenticated, RLS-bound, dashboard-facing.
+// ============================================================================
+
+/** All follow-up steps (any status) for a lead's website conversation, step
+ * ascending — the UI shows "which step, when, what status" (task section
+ * 15), nothing more. No conversation → empty array, not an error (mirrors
+ * getConversationDetail's shape for a lead with no chat history yet). */
+export const getFollowupsForLead = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({ leadId: z.string().regex(UUID_RE) }).parse(input))
+  .handler(async ({ data, context }): Promise<FollowupRow[]> => {
+    const { supabase } = context;
+    const { data: conversation, error: convError } = await supabase
+      .from("conversations")
+      .select("id")
+      .eq("lead_id", data.leadId)
+      .eq("channel", "website")
+      .maybeSingle();
+    if (convError) throw new Error(convError.message);
+    if (!conversation) return [];
+
+    const { data: rows, error } = await supabase
+      .from("conversation_followups")
+      .select(
+        "id, conversation_id, step, status, scheduled_for, sent_at, cancelled_at, failed_at, skip_reason",
+      )
+      .eq("conversation_id", conversation.id)
+      .order("step", { ascending: true });
+    if (error) throw new Error(error.message);
+    return (rows ?? []).map(toFollowupRow);
+  });
+
+/** "Follow-ups stoppen" (task section 15) — cancels every currently
+ * `scheduled` row for the lead's conversation. Owner-authorization is RLS
+ * itself (the UPDATE policy only matches the caller's own tenant); a
+ * foreign leadId simply updates 0 rows, same no-op-for-foreign-data
+ * pattern as the rest of this codebase. Rows already `sent`/`cancelled`/
+ * `failed`/`skipped` are untouched — this only ever cancels what's still
+ * pending. */
+export const cancelFollowupsForLead = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((input: unknown) => z.object({ leadId: z.string().regex(UUID_RE) }).parse(input))
+  .handler(async ({ data, context }): Promise<{ cancelledCount: number }> => {
+    const { supabase } = context;
+    const { data: conversation, error: convError } = await supabase
+      .from("conversations")
+      .select("id")
+      .eq("lead_id", data.leadId)
+      .eq("channel", "website")
+      .maybeSingle();
+    if (convError) throw new Error(convError.message);
+    if (!conversation) return { cancelledCount: 0 };
+
+    const { data: cancelled, error } = await supabase
+      .from("conversation_followups")
+      .update({
+        status: "cancelled",
+        cancelled_at: new Date().toISOString(),
+        skip_reason: "owner_stopped",
+      })
+      .eq("conversation_id", conversation.id)
+      .eq("status", "scheduled")
+      .select("id");
+    if (error) throw new Error(error.message);
+    return { cancelledCount: cancelled?.length ?? 0 };
+  });
+
+// ============================================================================
+// Writes/scheduling — plain functions, client passed in by the caller.
+// ============================================================================
+
+/** Cancels every currently `scheduled` follow-up for a conversation — the
+ * lead replying invalidates whatever was pending (task section 8). Same
+ * update shape as cancelFollowupsForLead's owner-triggered cancel, just a
+ * different skip_reason and no RLS involved (service-role caller). A
+ * no-op if nothing is scheduled. */
+export async function cancelOpenFollowupsOnLeadReply(
+  client: SupabaseClient<Database>,
+  args: { conversationId: string },
+): Promise<void> {
+  const { error } = await client
+    .from("conversation_followups")
+    .update({
+      status: "cancelled",
+      cancelled_at: new Date().toISOString(),
+      skip_reason: "lead_replied",
+    })
+    .eq("conversation_id", args.conversationId)
+    .eq("status", "scheduled");
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Schedules the full 1-3 step sequence for a conversation, all at once, IF
+ * none has ever been scheduled for it yet (see shouldScheduleSequence's
+ * doc comment — a lifetime cap, not a per-episode one) and the
+ * conversation is still open. Idempotent: calling this again for a
+ * conversation that already has follow-up rows is a safe no-op, not an
+ * error and not a duplicate insert (also structurally impossible either
+ * way — see the `(conversation_id, step)` unique constraint).
+ */
+export async function ensureFollowupsForConversation(
+  client: SupabaseClient<Database>,
+  args: { conversationId: string; companyId: string; originAt?: Date },
+): Promise<void> {
+  const originAt = args.originAt ?? new Date();
+
+  const { data: conversation, error: convError } = await client
+    .from("conversations")
+    .select("status")
+    .eq("id", args.conversationId)
+    .maybeSingle();
+  if (convError) throw new Error(convError.message);
+  if (!conversation) return; // conversation gone — nothing to schedule against
+
+  const { count: existingFollowupCount, error: countError } = await client
+    .from("conversation_followups")
+    .select("id", { count: "exact", head: true })
+    .eq("conversation_id", args.conversationId);
+  if (countError) throw new Error(countError.message);
+
+  const decision = shouldScheduleSequence({
+    conversationStatus: conversation.status,
+    existingFollowupCount: existingFollowupCount ?? 0,
+  });
+  if (!decision.schedule) return;
+
+  const { data: lastMessage, error: seqError } = await client
+    .from("messages")
+    .select("sequence")
+    .eq("conversation_id", args.conversationId)
+    .order("sequence", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (seqError) throw new Error(seqError.message);
+  const afterSequence = lastMessage?.sequence ?? -1;
+
+  const rows = FOLLOWUP_STEPS.map((step) => ({
+    conversation_id: args.conversationId,
+    company_id: args.companyId,
+    step,
+    scheduled_for: computeScheduledFor(originAt, step).toISOString(),
+    after_sequence: afterSequence,
+  }));
+  const { error: insertError } = await client.from("conversation_followups").insert(rows);
+  if (insertError) throw new Error(insertError.message);
+}
+
+/**
+ * The single entry point widget.chat.ts calls after every canonical
+ * message sync (see syncCanonicalConversation) — composes the two rules
+ * above from what was actually just appended, so the two "when do
+ * follow-ups start/stop" moments (task sections 8 and 16) can never
+ * silently drift apart in two different call sites:
+ *   - a new 'lead' message cancels any still-open follow-ups
+ *   - a new 'ai' message (re-)ensures the sequence is scheduled if this is
+ *     the conversation's first-ever eligible turn
+ * Both can fire from the same call (the widget appends a 'lead' message
+ * and the 'ai' reply together every turn) — cancel always runs before
+ * ensure, so a fresh sequence is correctly evaluated against the
+ * post-reply state, not stale pre-reply state.
+ */
+export async function handleFollowupsAfterMessages(
+  client: SupabaseClient<Database>,
+  args: {
+    conversationId: string;
+    companyId: string;
+    appendedSenderTypes: MessageSenderType[];
+    now?: Date;
+  },
+): Promise<void> {
+  if (args.appendedSenderTypes.includes("lead")) {
+    await cancelOpenFollowupsOnLeadReply(client, { conversationId: args.conversationId });
+  }
+  if (args.appendedSenderTypes.includes("ai")) {
+    await ensureFollowupsForConversation(client, {
+      conversationId: args.conversationId,
+      companyId: args.companyId,
+      originAt: args.now,
+    });
+  }
+}
+
+// ============================================================================
+// Delivery abstraction (task section 11) — no external channel in this
+// slice. See ROADMAP.md for how a future email/WhatsApp/phone adapter
+// would slot in behind the same interface.
+// ============================================================================
+
+export type FollowupDeliveryInput = {
+  conversationId: string;
+  companyId: string;
+  step: FollowupStep;
+  content: string;
+};
+
+export type FollowupDeliveryResult =
+  | { delivered: true; messageId: string }
+  | { delivered: false; errorCode: string };
+
+export interface FollowupDeliveryAdapter {
+  deliver(
+    client: SupabaseClient<Database>,
+    input: FollowupDeliveryInput,
+  ): Promise<FollowupDeliveryResult>;
+}
+
+/**
+ * The only adapter this slice ships: "delivering" a follow-up means
+ * recording it as a normal canonical `sender_type: 'ai'` message in the
+ * conversation (via the one central appendMessages write path — task
+ * section 13, no second message-write path). This is not a no-op stub
+ * that discards the content, and it is not a real external channel either
+ * — it's the same persistence a live AI reply already gets, visible to
+ * the Makler in the dashboard. No email/WhatsApp/phone package is
+ * installed or called.
+ */
+export const canonicalMessageDeliveryAdapter: FollowupDeliveryAdapter = {
+  async deliver(client, input) {
+    const inserted = await appendMessages(client, {
+      conversationId: input.conversationId,
+      companyId: input.companyId,
+      messages: [{ senderType: "ai", content: input.content }],
+    });
+    const message = inserted[0];
+    if (!message) {
+      return { delivered: false, errorCode: "no_message_inserted" };
+    }
+    return { delivered: true, messageId: message.id };
+  },
+};
+
+// ============================================================================
+// Worker (task section 10) — processDueFollowups(now). Not yet wired to an
+// automatic scheduler (no pg_cron/edge function infra exists in this
+// project — see ROADMAP.md); called directly by tests today, ready for a
+// future scheduled invocation without any change to this function itself.
+// ============================================================================
+
+export type ProcessDueFollowupsResult = {
+  claimed: number;
+  sent: number;
+  cancelled: number;
+  failed: number;
+};
+
+/**
+ * Race-safe by construction, not by convention: claiming happens via one
+ * `UPDATE ... WHERE status = 'scheduled' AND scheduled_for <= now RETURNING
+ * *`, which — under ordinary Postgres row-level UPDATE semantics — lets at
+ * most one concurrent call ever move a given row out of 'scheduled'. A
+ * second concurrent/duplicate invocation naturally claims zero rows for
+ * anything already claimed, no advisory locks needed (see the migration
+ * header). Every claimed row is then processed independently (its own
+ * try/catch) so one row's failure never blocks the rest.
+ */
+export async function processDueFollowups(
+  client: SupabaseClient<Database>,
+  args: { now?: Date; adapter?: FollowupDeliveryAdapter } = {},
+): Promise<ProcessDueFollowupsResult> {
+  const now = args.now ?? new Date();
+  const adapter = args.adapter ?? canonicalMessageDeliveryAdapter;
+
+  const { data: claimed, error: claimError } = await client
+    .from("conversation_followups")
+    .update({ status: "processing" })
+    .eq("status", "scheduled")
+    .lte("scheduled_for", now.toISOString())
+    .select("id, conversation_id, company_id, step, after_sequence");
+  if (claimError) throw new Error(claimError.message);
+
+  const result: ProcessDueFollowupsResult = {
+    claimed: claimed?.length ?? 0,
+    sent: 0,
+    cancelled: 0,
+    failed: 0,
+  };
+
+  for (const row of claimed ?? []) {
+    try {
+      const { data: conversation, error: convError } = await client
+        .from("conversations")
+        .select("status")
+        .eq("id", row.conversation_id)
+        .maybeSingle();
+      if (convError) throw new Error(convError.message);
+
+      const { count: laterLeadMessages, error: msgError } = await client
+        .from("messages")
+        .select("id", { count: "exact", head: true })
+        .eq("conversation_id", row.conversation_id)
+        .eq("sender_type", "lead")
+        .gt("sequence", row.after_sequence);
+      if (msgError) throw new Error(msgError.message);
+
+      const decision = shouldSendFollowup({
+        conversationStatus: conversation?.status ?? "closed",
+        hasLeadReplySinceOrigin: (laterLeadMessages ?? 0) > 0,
+      });
+
+      if (!decision.send) {
+        const { error: cancelError } = await client
+          .from("conversation_followups")
+          .update({
+            status: "cancelled",
+            cancelled_at: now.toISOString(),
+            skip_reason: decision.reason,
+          })
+          .eq("id", row.id);
+        if (cancelError) throw new Error(cancelError.message);
+        result.cancelled += 1;
+        continue;
+      }
+
+      const delivery = await adapter.deliver(client, {
+        conversationId: row.conversation_id,
+        companyId: row.company_id,
+        step: row.step as FollowupStep,
+        content: getFollowupTemplate(row.step as FollowupStep),
+      });
+
+      if (delivery.delivered) {
+        const { error: sentError } = await client
+          .from("conversation_followups")
+          .update({ status: "sent", sent_at: now.toISOString(), message_id: delivery.messageId })
+          .eq("id", row.id);
+        if (sentError) throw new Error(sentError.message);
+        result.sent += 1;
+      } else {
+        const { error: failError } = await client
+          .from("conversation_followups")
+          .update({
+            status: "failed",
+            failed_at: now.toISOString(),
+            error_code: delivery.errorCode,
+          })
+          .eq("id", row.id);
+        if (failError) throw new Error(failError.message);
+        result.failed += 1;
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      await client
+        .from("conversation_followups")
+        .update({
+          status: "failed",
+          failed_at: now.toISOString(),
+          error_code: message.slice(0, 200),
+        })
+        .eq("id", row.id);
+      result.failed += 1;
+    }
+  }
+
+  return result;
+}

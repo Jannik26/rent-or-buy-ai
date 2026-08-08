@@ -13,6 +13,7 @@ import { isPlusAddressed, normalizeEmail } from "@/lib/validate-email";
 import { isCompanyAllowedToUseWidget } from "@/lib/billing/widget-access";
 import { DEMO_COMPANY_ID } from "@/lib/demo-company";
 import { syncCanonicalConversation } from "@/lib/conversations/conversations.functions";
+import { handleFollowupsAfterMessages } from "@/lib/followups/followups.functions";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -566,11 +567,32 @@ async function persistLeadFromTranscript(args: {
   // the visitor, which has already been streamed by this point.
   if (finalLeadId) {
     try {
-      await syncCanonicalConversation(supabaseAdmin, {
-        leadId: finalLeadId,
-        companyId: args.companyId,
-        transcript,
-      });
+      const { conversationId, appendedSenderTypes } = await syncCanonicalConversation(
+        supabaseAdmin,
+        {
+          leadId: finalLeadId,
+          companyId: args.companyId,
+          transcript,
+        },
+      );
+
+      // ---- Automated Lead Follow-ups Foundation (Product Track slice 5) ----
+      // Own try/catch, same isolation reasoning as the sync above: a
+      // follow-up-scheduling failure must never break the widget's reply.
+      // Composes both halves off exactly what was just appended (see
+      // handleFollowupsAfterMessages's doc comment) — the lead's new
+      // message cancels any still-open follow-ups, the AI's reply (re-)
+      // ensures a sequence is scheduled if this conversation has never had
+      // one yet.
+      try {
+        await handleFollowupsAfterMessages(supabaseAdmin, {
+          conversationId,
+          companyId: args.companyId,
+          appendedSenderTypes,
+        });
+      } catch (err) {
+        console.error("[widget] follow-up scheduling error", err);
+      }
     } catch (err) {
       console.error("[widget] canonical conversation sync error", err);
     }

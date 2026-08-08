@@ -259,7 +259,10 @@ export async function findOrCreateConversation(
 /** Appends one or more new messages to a conversation. `sequence` is never
  * passed — the `tg_set_message_sequence` trigger always computes it from
  * existing rows, see the migration. A caller with zero new messages is a
- * no-op, not an error. */
+ * no-op, not an error. Returns the inserted rows' id/sequence — the one
+ * central write path every message-producing feature (widget chat,
+ * automated follow-ups, see src/lib/followups/) goes through, per "keinen
+ * zweiten unabhängigen Message-Schreibpfad bauen". */
 export async function appendMessages(
   client: SupabaseClient<Database>,
   args: {
@@ -267,16 +270,17 @@ export async function appendMessages(
     companyId: string;
     messages: { senderType: MessageSenderType; content: string }[];
   },
-): Promise<void> {
-  if (args.messages.length === 0) return;
+): Promise<{ id: string; sequence: number }[]> {
+  if (args.messages.length === 0) return [];
   const rows = args.messages.map((m) => ({
     conversation_id: args.conversationId,
     company_id: args.companyId,
     sender_type: m.senderType,
     content: m.content,
   }));
-  const { error } = await client.from("messages").insert(rows);
+  const { data, error } = await client.from("messages").insert(rows).select("id, sequence");
   if (error) throw new Error(error.message);
+  return data ?? [];
 }
 
 /**
@@ -294,7 +298,7 @@ export async function appendMessages(
 export async function syncCanonicalConversation(
   client: SupabaseClient<Database>,
   args: { leadId: string; companyId: string; transcript: TranscriptTurn[] },
-): Promise<void> {
+): Promise<{ conversationId: string; appendedSenderTypes: MessageSenderType[] }> {
   const conversationId = await findOrCreateConversation(client, {
     leadId: args.leadId,
     companyId: args.companyId,
@@ -322,4 +326,10 @@ export async function syncCanonicalConversation(
     companyId: args.companyId,
     messages: newMessages,
   });
+
+  // Returned so callers (widget.chat.ts) can drive the follow-up engine
+  // (src/lib/followups/) off exactly what was just appended, without a
+  // second findOrCreateConversation lookup or re-deriving sender types
+  // themselves — see handleFollowupsAfterMessages.
+  return { conversationId, appendedSenderTypes: newMessages.map((m) => m.senderType) };
 }
