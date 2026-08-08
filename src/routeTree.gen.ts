@@ -29,6 +29,7 @@ import { Route as AuthenticatedLeadsIndexRouteImport } from './routes/_authentic
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin/index'
 import { Route as AuthenticatedLeadsLeadIdRouteImport } from './routes/_authenticated/leads/$leadId'
 import { Route as ApiPublicWidgetChatRouteImport } from './routes/api/public/widget.chat'
+import { Route as ApiInternalFollowupsProcessRouteImport } from './routes/api/internal/followups.process'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
@@ -132,6 +133,12 @@ const ApiPublicWidgetChatRoute = ApiPublicWidgetChatRouteImport.update({
   path: '/api/public/widget/chat',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiInternalFollowupsProcessRoute =
+  ApiInternalFollowupsProcessRouteImport.update({
+    id: '/api/internal/followups/process',
+    path: '/api/internal/followups/process',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -152,6 +159,7 @@ export interface FileRoutesByFullPath {
   '/leads/$leadId': typeof AuthenticatedLeadsLeadIdRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/leads/': typeof AuthenticatedLeadsIndexRoute
+  '/api/internal/followups/process': typeof ApiInternalFollowupsProcessRoute
   '/api/public/widget/chat': typeof ApiPublicWidgetChatRoute
 }
 export interface FileRoutesByTo {
@@ -173,6 +181,7 @@ export interface FileRoutesByTo {
   '/leads/$leadId': typeof AuthenticatedLeadsLeadIdRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/leads': typeof AuthenticatedLeadsIndexRoute
+  '/api/internal/followups/process': typeof ApiInternalFollowupsProcessRoute
   '/api/public/widget/chat': typeof ApiPublicWidgetChatRoute
 }
 export interface FileRoutesById {
@@ -196,6 +205,7 @@ export interface FileRoutesById {
   '/_authenticated/leads/$leadId': typeof AuthenticatedLeadsLeadIdRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/leads/': typeof AuthenticatedLeadsIndexRoute
+  '/api/internal/followups/process': typeof ApiInternalFollowupsProcessRoute
   '/api/public/widget/chat': typeof ApiPublicWidgetChatRoute
 }
 export interface FileRouteTypes {
@@ -219,6 +229,7 @@ export interface FileRouteTypes {
     | '/leads/$leadId'
     | '/admin/'
     | '/leads/'
+    | '/api/internal/followups/process'
     | '/api/public/widget/chat'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -240,6 +251,7 @@ export interface FileRouteTypes {
     | '/leads/$leadId'
     | '/admin'
     | '/leads'
+    | '/api/internal/followups/process'
     | '/api/public/widget/chat'
   id:
     | '__root__'
@@ -262,6 +274,7 @@ export interface FileRouteTypes {
     | '/_authenticated/leads/$leadId'
     | '/_authenticated/admin/'
     | '/_authenticated/leads/'
+    | '/api/internal/followups/process'
     | '/api/public/widget/chat'
   fileRoutesById: FileRoutesById
 }
@@ -276,6 +289,7 @@ export interface RootRouteChildren {
   ResetPasswordRoute: typeof ResetPasswordRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   WidgetCompanyIdRoute: typeof WidgetCompanyIdRoute
+  ApiInternalFollowupsProcessRoute: typeof ApiInternalFollowupsProcessRoute
   ApiPublicWidgetChatRoute: typeof ApiPublicWidgetChatRoute
 }
 
@@ -421,6 +435,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicWidgetChatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/internal/followups/process': {
+      id: '/api/internal/followups/process'
+      path: '/api/internal/followups/process'
+      fullPath: '/api/internal/followups/process'
+      preLoaderRoute: typeof ApiInternalFollowupsProcessRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -462,6 +483,7 @@ const rootRouteChildren: RootRouteChildren = {
   ResetPasswordRoute: ResetPasswordRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   WidgetCompanyIdRoute: WidgetCompanyIdRoute,
+  ApiInternalFollowupsProcessRoute: ApiInternalFollowupsProcessRoute,
   ApiPublicWidgetChatRoute: ApiPublicWidgetChatRoute,
 }
 export const routeTree = rootRouteImport

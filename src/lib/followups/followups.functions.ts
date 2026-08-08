@@ -23,9 +23,12 @@ import type { Database } from "@/integrations/supabase/types";
 import { appendMessages } from "@/lib/conversations/conversations.functions";
 import type { MessageSenderType } from "@/lib/conversations/conversation-rules";
 import {
+  DEFAULT_FOLLOWUP_WORKER_BATCH_SIZE,
+  DEFAULT_STALE_PROCESSING_MINUTES,
   FOLLOWUP_STEPS,
   computeScheduledFor,
   getFollowupTemplate,
+  isStaleProcessing,
   shouldScheduleSequence,
   shouldSendFollowup,
   type FollowupStatus,
@@ -318,36 +321,131 @@ export type ProcessDueFollowupsResult = {
 };
 
 /**
- * Race-safe by construction, not by convention: claiming happens via one
- * `UPDATE ... WHERE status = 'scheduled' AND scheduled_for <= now RETURNING
- * *`, which — under ordinary Postgres row-level UPDATE semantics — lets at
- * most one concurrent call ever move a given row out of 'scheduled'. A
- * second concurrent/duplicate invocation naturally claims zero rows for
+ * Recovery for the "worker died between claim and final status" case (task
+ * section 10): a `processing` row whose `updated_at` is older than
+ * `staleAfterMinutes` was abandoned by a runtime that never reached a
+ * terminal status — no automatic scheduler existed before this slice, so
+ * this could previously only happen via a manual test run being killed
+ * mid-flight, but it becomes a real operational concern once a scheduler
+ * retries on a fixed interval.
+ *
+ * Never risks a double send: before touching a stale row, it checks
+ * whether a matching canonical message (same conversation, the exact
+ * deterministic template text for that step, at or after the sequence
+ * this follow-up was scheduled against) already exists. If one does, the
+ * row is reconciled to `sent` and backfilled with that message's id —
+ * the delivery genuinely happened, only the bookkeeping update was lost.
+ * If no such message exists, nothing was ever sent, so it's safe to
+ * reset the row back to `scheduled` for a normal future claim (still
+ * fully protected by processDueFollowups' own atomic claim — this does
+ * not bypass that).
+ */
+export async function recoverStaleProcessingFollowups(
+  client: SupabaseClient<Database>,
+  args: { now?: Date; staleAfterMinutes?: number } = {},
+): Promise<{ recovered: number; reconciledAsSent: number; resetToScheduled: number }> {
+  const now = args.now ?? new Date();
+  const staleAfterMinutes = args.staleAfterMinutes ?? DEFAULT_STALE_PROCESSING_MINUTES;
+
+  const { data: processingRows, error: selectError } = await client
+    .from("conversation_followups")
+    .select("id, conversation_id, step, updated_at")
+    .eq("status", "processing");
+  if (selectError) throw new Error(selectError.message);
+
+  const stale = (processingRows ?? []).filter((row) =>
+    isStaleProcessing(new Date(row.updated_at), now, staleAfterMinutes),
+  );
+
+  const result = { recovered: 0, reconciledAsSent: 0, resetToScheduled: 0 };
+
+  for (const row of stale) {
+    // Re-check status='processing' in the WHERE clause of every write below
+    // — the same "recheck at write time" discipline as the main claim
+    // query, in case a normally-running worker finishes this exact row
+    // between the SELECT above and here.
+    const { data: matchingMessage, error: msgError } = await client
+      .from("messages")
+      .select("id")
+      .eq("conversation_id", row.conversation_id)
+      .eq("content", getFollowupTemplate(row.step as FollowupStep))
+      .order("sequence", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    if (msgError) throw new Error(msgError.message);
+
+    if (matchingMessage) {
+      const { error } = await client
+        .from("conversation_followups")
+        .update({ status: "sent", sent_at: now.toISOString(), message_id: matchingMessage.id })
+        .eq("id", row.id)
+        .eq("status", "processing");
+      if (error) throw new Error(error.message);
+      result.reconciledAsSent += 1;
+    } else {
+      const { error } = await client
+        .from("conversation_followups")
+        .update({ status: "scheduled" })
+        .eq("id", row.id)
+        .eq("status", "processing");
+      if (error) throw new Error(error.message);
+      result.resetToScheduled += 1;
+    }
+    result.recovered += 1;
+  }
+
+  return result;
+}
+
+/**
+ * Race-safe by construction, not by convention: claiming happens in two
+ * steps — an ordinary SELECT to pick the oldest-due candidates up to
+ * `batchSize` (see the task's batch-limit requirement; Postgres UPDATE has
+ * no LIMIT clause, so a plain single-statement claim can't be capped), then
+ * an `UPDATE ... WHERE status = 'scheduled' AND id IN (candidates)
+ * RETURNING *`. The UPDATE's own `status = 'scheduled'` condition — not the
+ * SELECT — is what actually prevents double-claiming: under ordinary
+ * Postgres row-level UPDATE semantics, at most one concurrent call ever
+ * moves a given row out of 'scheduled' (a second transaction hitting the
+ * same row blocks on the row lock, then re-evaluates `status = 'scheduled'`
+ * against the now-committed row once unblocked and correctly excludes it).
+ * A second concurrent/duplicate invocation naturally claims zero rows for
  * anything already claimed, no advisory locks needed (see the migration
  * header). Every claimed row is then processed independently (its own
  * try/catch) so one row's failure never blocks the rest.
  */
 export async function processDueFollowups(
   client: SupabaseClient<Database>,
-  args: { now?: Date; adapter?: FollowupDeliveryAdapter } = {},
+  args: { now?: Date; adapter?: FollowupDeliveryAdapter; batchSize?: number } = {},
 ): Promise<ProcessDueFollowupsResult> {
   const now = args.now ?? new Date();
   const adapter = args.adapter ?? canonicalMessageDeliveryAdapter;
+  const batchSize = args.batchSize ?? DEFAULT_FOLLOWUP_WORKER_BATCH_SIZE;
+
+  const { data: candidates, error: candidatesError } = await client
+    .from("conversation_followups")
+    .select("id")
+    .eq("status", "scheduled")
+    .lte("scheduled_for", now.toISOString())
+    .order("scheduled_for", { ascending: true })
+    .limit(batchSize);
+  if (candidatesError) throw new Error(candidatesError.message);
+
+  const result: ProcessDueFollowupsResult = { claimed: 0, sent: 0, cancelled: 0, failed: 0 };
+  if (!candidates || candidates.length === 0) return result;
 
   const { data: claimed, error: claimError } = await client
     .from("conversation_followups")
     .update({ status: "processing" })
     .eq("status", "scheduled")
-    .lte("scheduled_for", now.toISOString())
+    .in(
+      "id",
+      candidates.map((c) => c.id),
+    )
     .select("id, conversation_id, company_id, step, after_sequence");
   if (claimError) throw new Error(claimError.message);
 
-  const result: ProcessDueFollowupsResult = {
-    claimed: claimed?.length ?? 0,
-    sent: 0,
-    cancelled: 0,
-    failed: 0,
-  };
+  result.claimed = claimed?.length ?? 0;
 
   for (const row of claimed ?? []) {
     try {

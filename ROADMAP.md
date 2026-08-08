@@ -5,7 +5,8 @@
 Verification-Track-Slice 1 (persistierte Playwright-E2E-Basis) +
 Product-Track-Slice 4 (Conversations Foundation — kanonische
 Conversations-/Messages-Domain) + Slice 5 (Automated Lead Follow-ups
-Foundation) · Kanonisches Planungsdokument.**
+Foundation) + Slice 6 (Production Follow-up Scheduler) · Kanonisches
+Planungsdokument.**
 
 Dieses Dokument ersetzt `.lovable/plan.md` als laufende Roadmap. Es wird bei
 jeder größeren strategischen oder architektonischen Entscheidung aktualisiert
@@ -112,7 +113,7 @@ Branch/Kontext; **Integration in EstateAI selbst** ist PLANNED)
 | Conversations-Ansicht | ✅ DONE (2026-08-08, Product-Track-Slice 3 „Conversations V1" + Slice 4 „Conversations Foundation") | Master-Detail-Ansicht (Liste links, Verlauf rechts, responsive), Suche (Name), Filter (Status/Score), Empty States — seit Slice 4 auf der **kanonischen** `conversations`/`messages`-Domain statt `leads.messages`-JSONB (siehe Abschnitt 7). Sortierung nach `conversations.last_message_at` (echte Spalte, per Trigger gepflegt), Reihenfolge innerhalb einer Conversation nach `sequence` (nie `created_at` — siehe Risiko 10, jetzt gelöst). Lead-Detailseite liest denselben Server-Function-Aufruf, keine zweite Wahrheit mehr. Weiterhin kein Schreibzugriff in der UI selbst (nur der Widget-Chat schreibt, jetzt in die kanonische Domain, siehe unten) |
 | Analytics-Dashboard | ✅ DONE (2026-08-07, Product-Track-Slice 2, „Analytics V1") | Echte, tenant-isolierte Kennzahlen statt Platzhalter: Lead-/Termin-KPIs, Zeitfilter (7/30/90 Tage/gesamt), Trends ggü. Vorperiode, 3-stufiger Funnel, Status-/Score-Verteilung, Tagesverläufe (nur für endliche Zeitfenster). Serverseitige Aggregation über eine RLS-gebundene `SECURITY INVOKER`-SQL-Funktion (`analytics_summary`, kein `company_id`-Parameter — Tenant-Isolation entsteht ausschließlich durch RLS), keine PII in der Antwort. `leads.status='termin'` ohne echten Termin wird bewusst **nicht** in „Aktive Termine"/Conversion mitgezählt, sondern separat als Altbestand ausgewiesen (siehe Abschnitt 9, Punkt 9). 12 SQL-Korrektheits-/RLS-Assertions gegen die echte DB (`supabase/tests/analytics_rls.sql`), 22 Unit-Tests für die reinen Kennzahl-Regeln |
 | E2E-Testinfrastruktur (Playwright) | ✅ DONE (2026-08-08, Verification-Track-Slice 1) | `tests/e2e/` — Core-Journey-Suite (Auth-Guard, Dashboard, Leads inkl. Tenant-Isolation, Conversations, Appointments inkl. Storno-/Wiederherstell-Lifecycle, Analytics inkl. Zeitfensterwechsel, Navigation) + ein Mobile-Smoke-Test. Dedizierter QA-Mandant, deterministische/idempotente Fixtures per fixer ID, Auth per Admin-generiertem Magic-Link + `storageState` (kein neuer Signup). 10/10 grün, dreifach reproduzierbar. Ergänzt, ersetzt nicht, die bestehenden SQL-RLS-Tests. Version gepinnt auf `1.45.0` wegen macOS-Ventura-Browser-Binary-Inkompatibilität neuerer Playwright-Versionen auf dieser Entwicklungsmaschine |
-| Automatisierte Follow-ups | 🟡 PARTIAL (2026-08-08, Product-Track-Slice 5, „Automated Lead Follow-ups Foundation") | Engine vollständig: kanonische `conversation_followups`-Tabelle, DB-verankertes Max-3-Limit (CHECK + UNIQUE, kein reines UI-Limit), Scheduling (24h/72h/144h-Staffelung), race-sicherer Claim-Worker (`processDueFollowups`), Abbruch bei Lead-Antwort oder geschlossener Conversation, deterministische Templates, minimale UI (Status + Stopp-Button). **Noch nicht verbunden:** kein Scheduler/Cron ruft den Worker automatisch auf (kein `pg_cron`/keine Edge Function im Projekt — siehe Abschnitt 9/10); keine echten externen Kanäle (E-Mail/WhatsApp/Telefon) — „gesendet" bedeutet aktuell ausschließlich ein kanonischer `sender_type='ai'`-Eintrag im Conversation-Verlauf |
+| Automatisierte Follow-ups | 🟡 PARTIAL (2026-08-08, Slice 5 „Foundation" + Slice 6 „Production Scheduler") | Engine + Scheduler beide vollständig: kanonische `conversation_followups`-Tabelle, DB-verankertes Max-3-Limit, Scheduling (24h/72h/144h), race-sicherer Batch-/Claim-Worker (`processDueFollowups`) inkl. Stale-Processing-Recovery, Abbruch bei Lead-Antwort/geschlossener Conversation, Vercel-Cron-Anbindung (alle 5 Min.) über einen geschützten Worker-Endpoint, minimale UI. **Verbleibend:** `CRON_SECRET` muss noch manuell in Vercel gesetzt werden (siehe Risiko 14) — bis dahin lehnt der Endpoint jeden Aufruf korrekt mit 401 ab, sendet aber nichts; keine echten externen Kanäle (E-Mail/WhatsApp/Telefon, siehe Risiko 18) — „gesendet" bedeutet weiterhin ausschließlich ein kanonischer `sender_type='ai'`-Eintrag im Conversation-Verlauf, nie ein tatsächlicher Kontakt beim Interessenten |
 | DSGVO-Löschfristen | ⏳ PLANNED | `data-retention.ts` definiert Zielwerte (30 Tage Demo, 6–12 Monate ohne Abschluss) explizit als **noch nicht durchgesetzt** |
 | AI-Provider-Anbindung | ✅ DONE (aber nicht abstrahiert) | Direkt `@ai-sdk/anthropic` via Vercel AI SDK (`ai`-Package), kein Gateway/Abstraktionslayer — funktioniert, aber Wechsel des Modells/Anbieters erfordert Codeänderung an einer Stelle (`ai-gateway.server.ts`, aktuell nur ein dünner Wrapper) |
 | Agent/Widget-ID-Struktur (RE/MAX-Vorbereitung) | ⏳ PLANNED | Nur `company_id` existiert; `agent_id`/`widget_id` noch nicht im Schema — siehe Abschnitt 7 |
@@ -431,6 +432,32 @@ werden können, statt auf Phase A zu warten:
   (E-Mail/WhatsApp/Telefon), automatischer Scheduler/Cron für den Worker
   (kein `pg_cron`/keine Edge Function im Projekt), OpenClaw-Integration,
   Kalender-Sync
+- ✅ **DONE (2026-08-08, Slice 6, „Production Follow-up Scheduler")**
+  Schließt Risiko 14 — `processDueFollowups` (Slice 5) läuft jetzt
+  automatisch. Architektur: Vercel Cron (`vercel.json`, `*/5 * * * *`) →
+  geschützter Worker-Endpoint (`GET/POST /api/internal/followups/process`)
+  → `recoverStaleProcessingFollowups` + `processDueFollowups`. Kein
+  Umbau der Slice-5-Domainlogik — der Endpoint orchestriert nur.
+  Auth über Vercels eigene `CRON_SECRET`-Konvention (Vercel setzt den
+  `Authorization`-Header automatisch, sobald die Env-Var im
+  Vercel-Projekt gesetzt ist), zusätzlich serverseitig per
+  Constant-Time-Vergleich geprüft, fail-closed ohne konfiguriertes
+  Secret. Kill-Switch `FOLLOWUP_WORKER_ENABLED` (Default: an). Batch-
+  Limit `FOLLOWUP_WORKER_BATCH_SIZE` (Default 50) — dabei ein echter
+  Race-Bug in der ursprünglichen Slice-5-Claim-Query gefunden und
+  behoben (ein reiner `id IN (Liste)`-Filter ohne zusätzliches
+  `status='scheduled'` in der äußeren UPDATE-Klausel hätte das
+  Double-Claim-Schutz beim Hinzufügen eines LIMIT unterlaufen können —
+  siehe Abschnitt 7). Stale-Processing-Recovery ganz ohne neue Spalte
+  (nutzt das bestehende, trigger-gepflegte `updated_at`), mit
+  Double-Send-Schutz per Message-Abgleich vor jedem Reset. Observability
+  über die bestehende `system_events`-Tabelle (keine neue Logging-
+  Infrastruktur), keine personenbezogenen Daten geloggt. 9/9
+  Integrationsszenarien (u. a. echte parallele Worker-Aufrufe gegen
+  denselben fälligen Datensatz) gegen die verbundene Projekt-DB grün,
+  keine Schemaänderung, RLS erneut vollständig verifiziert (15/15,
+  unverändert). Bewusst nicht Teil dieses Slices: echter externer
+  Versandkanal, neue Follow-up-Texte/-Intervalle, UI-Änderungen.
 - Lead-Pipeline-Verbesserungen, weitere Maklerfunktionen
 - Beginn von Phase C (Matching/Vergleich/Kosten) kann parallel geplant
   werden, sobald das Immobilien-Datenmodell (Abschnitt 7) steht
@@ -728,6 +755,104 @@ in `leads.messages` für Follow-up-Inhalte — Risiko 12 (Dual-Write-Drift)
 wird durch dieses Slice nicht vergrößert, da Follow-ups nur die kanonische
 Seite berühren.
 
+**Production Follow-up Scheduler (✅ DONE, 2026-08-08, Slice 6):** gibt
+`processDueFollowups` (Slice 5) erstmals eine automatische, produktive
+Wirkung, ohne dessen Domainlogik anzufassen.
+
+*Architektur-Entscheidung:* Vercel Cron statt `pg_cron` oder einer
+Supabase Edge Function. Begründung: dieses Repo ist über GitHub bereits
+mit einem realen, aktiven Vercel-Projekt verbunden (jeder Push auf `main`
+löst automatisch ein Production-Deployment aus — verifiziert über die
+Vercel-API/-CLI, nicht angenommen), der Build läuft bereits über den
+Nitro-`vercel`-Preset, und `src/routes/api/public/widget.chat.ts` beweist
+bereits, dass API-Routen unter diesem Stack korrekt als Vercel Functions
+deployen. `pg_cron` ist auf diesem Supabase-Projekt nicht installiert
+(geprüft) und hätte eine neue, ungenutzte DB-Extension eingeführt; eine
+Supabase Edge Function hätte eine komplett neue Laufzeitumgebung ins
+Projekt gebracht (aktuell keine einzige Edge Function vorhanden). Vercel
+Cron ist die kleinste Lösung, die zur bestehenden, bereits produktiv
+laufenden Infrastruktur passt.
+
+*Worker-Endpoint:* `GET/POST /api/internal/followups/process`
+(`src/routes/api/internal/followups.process.ts`) — bewusst dünn: nur
+Auth, Kill-Switch, Aufruf von `recoverStaleProcessingFollowups` +
+`processDueFollowups`, Observability. Keine Domainlogik-Duplikation.
+Vercel Cron sendet immer GET (Vercel-Dokumentation verifiziert); POST
+zusätzlich für manuelles/lokales Testen. Kein CORS, kein OPTIONS-Handler
+— anders als der Widget-Endpoint wird dieser nie aus einem Browser heraus
+aufgerufen, same-origin-only ist hier die bewusst engere, korrekte
+Voreinstellung.
+
+*Auth:* `CRON_SECRET` — exakt Vercels eigene dokumentierte Konvention
+(nicht z. B. `FOLLOWUP_CRON_SECRET` erfunden): sobald diese Env-Var im
+Vercel-Projekt gesetzt ist, sendet Vercel selbst automatisch
+`Authorization: Bearer <secret>` bei jedem Cron-Aufruf mit. Der Endpoint
+vertraut dem nicht blind, sondern prüft den Header bei jedem Request
+selbst, per Constant-Time-Vergleich (SHA-256-Digest beider Werte vor
+`timingSafeEqual`, damit ein Längenunterschied nicht selbst schon ein
+Timing-Signal ist). Fehlt `CRON_SECRET` serverseitig, wird grundsätzlich
+abgelehnt (fail closed). Kein Secret im Client-Bundle, keine
+Query-Parameter, kein Logging des Secrets.
+
+*Scheduler-Frequenz:* alle 5 Minuten (`*/5 * * * *`) — vom Auftraggeber
+bestätigt zulässig (Vercel Pro-Plan oder höher; Hobby erlaubt nur 1x/Tag,
+das konnte über die verfügbaren Tools nicht selbst verifiziert werden).
+Die Business-Intervalle (24h/72h/144h) bleiben davon unberührt — Cron-
+Frequenz und Follow-up-Fälligkeit sind getrennte Konzepte, wie in der
+Aufgabenstellung gefordert.
+
+*Kill-Switch:* `FOLLOWUP_WORKER_ENABLED` (Default: aktiviert — ein nicht
+gesetzter Wert darf Follow-ups in einem frischen Deployment niemals
+stillschweigend abschalten). Erkennt `false`/`0`/`no`/`off`
+(groß-/kleinschreibungs- und Whitespace-unempfindlich) als „deaktiviert" —
+bewusst mehr als nur das buchstäbliche `false`, um ein reales
+Betriebsrisiko zu vermeiden (ein Operator, der `=0` setzt und erwartet,
+dass das abschaltet, darf nicht stillschweigend ins Leere laufen).
+
+*Batch-Limit:* `FOLLOWUP_WORKER_BATCH_SIZE` (Default 50, gültiger Bereich
+25–100 laut Vorgabe). Da `UPDATE` in Postgres kein `LIMIT` kennt, geschieht
+das Claimen zweistufig: eine gewöhnliche `SELECT ... ORDER BY
+scheduled_for LIMIT n` wählt die ältesten fälligen Kandidaten, danach
+claimt ein `UPDATE ... WHERE status = 'scheduled' AND id IN (...)` genau
+diese. **Dabei wurde ein echter Race-Bug in der ursprünglichen
+Slice-5-Fassung gefunden und behoben:** ein naiver zweistufiger Claim, der
+in der äußeren UPDATE-Klausel nur `id IN (Kandidatenliste)` prüft (ohne
+zusätzlich `status = 'scheduled'`), hätte den Double-Claim-Schutz
+unterlaufen können — Postgres' Zeilensperren-Recheck nach einem
+Lock-Konflikt prüft nur die tatsächliche WHERE-Klausel der äußeren
+Anweisung erneut, und eine ID bleibt auch dann noch „in der Liste“, wenn
+eine andere Transaktion den Status der Zeile inzwischen geändert hat. Die
+tatsächliche Absicherung ist deshalb weiterhin `status = 'scheduled'`
+direkt in der äußeren UPDATE-Klausel, nicht die SELECT-Vorauswahl — durch
+9/9 grüne Integrationsszenarien verifiziert, darunter ein Test mit zwei
+echten parallelen Worker-Aufrufen gegen denselben fälligen Datensatz.
+
+*Stale-Processing-Recovery:* kein neues Schema-Feld — nutzt
+`conversation_followups.updated_at`, das derselbe Trigger, der jeden
+Status-Übergang stempelt, ohnehin schon pflegt. Ein `processing`-Eintrag,
+dessen `updated_at` älter als `staleAfterMinutes` (Default 10) ist, hat
+seinen Worker-Lauf nie zu Ende gebracht. **Doppelversand-Schutz:** vor
+jedem Reset prüft die Recovery, ob bereits eine passende kanonische
+Nachricht existiert (gleiche Conversation, exakter Template-Text, Sequence
+ab dem Planungszeitpunkt) — falls ja, wird die Zeile nachträglich auf
+`sent` gesetzt (die Zustellung war real, nur die Buchführung ist verloren
+gegangen), falls nein, sicher zurück auf `scheduled` (dann erneut durch den
+normalen atomaren Claim geschützt). In Tests wurde bewusst nicht versucht,
+`updated_at` direkt zurückzudatieren (der Trigger überschreibt jeden
+manuellen Wert bei jedem UPDATE) — stattdessen ein winziger, aber echter
+Zeitabstand plus ein kleiner positiver Schwellenwert, um auch Taktversatz
+zwischen Testprozess und DB-Server zu vertragen.
+
+*Observability:* bestehende `system_events`-Tabelle (`kind='success'`/
+`'error'`, `source='followups.worker'`), keine neue Logging-Infrastruktur.
+Pro Lauf: `run_id`, Dauer, Anzahl geclaimt/gesendet/abgebrochen/
+fehlgeschlagen/wiederhergestellt, Batch-Größe, Schwellenwert — keine
+Nachrichteninhalte, keine Lead-/Personendaten.
+
+*Deployment-Status:* siehe Abschnitt 10 für den ehrlichen, tatsächlich
+verifizierten Stand (Code deployt vs. Cron tatsächlich aktiv vs. Secret
+gesetzt) — hier bewusst nicht vorweggenommen, um Duplikation zu vermeiden.
+
 Für kommende Phasen wahrscheinlich nötig (grobe Skizze, vor Umsetzung im
 Detail zu planen):
 
@@ -945,16 +1070,21 @@ Kriterien zurückführbar sein (siehe Beispiel in Phase C).
     blockierend; externe/parallele Aktivität weiterhin die plausibelste,
     unbewiesene Erklärung.
 14. **`processDueFollowups` ist nicht an einen automatischen Scheduler
-    angeschlossen** (neu, Slice 5) — der Worker selbst ist vollständig
-    fertig, race-sicher und getestet (siehe Abschnitt 7), aber es existiert
-    im Projekt weder `pg_cron` (Extension nicht installiert, geprüft) noch
-    eine Supabase Edge Function, die ihn periodisch aufrufen würde.
-    Follow-ups werden aktuell nur geplant (Zeilen in
-    `conversation_followups` entstehen korrekt), aber ohne einen externen
-    Trigger nie tatsächlich versendet. Bewusst nicht in diesem Slice
-    gelöst — Scheduler-Infrastruktur einzuführen (Extension aktivieren
-    oder eine Edge Function deployen) ist eine eigene, größere
-    Infrastrukturentscheidung mit eigenem Risiko, siehe Abschnitt 10.
+    angeschlossen — 🟡 Code-seitig GELÖST (2026-08-08, Slice 6), Aktivierung
+    hängt noch von einem manuellen Schritt außerhalb des Repos ab.** Der
+    Worker-Endpoint (`/api/internal/followups/process`) und die
+    `vercel.json`-Cron-Konfiguration (alle 5 Minuten) sind vollständig
+    implementiert, getestet (9/9 Integrationsszenarien inkl. echter
+    Nebenläufigkeit) und commitet. **Was noch fehlt, bevor der Scheduler
+    tatsächlich Follow-ups versendet:** die Env-Var `CRON_SECRET` muss im
+    Vercel-Projekt gesetzt werden (Vercel Dashboard → Project Settings →
+    Environment Variables) — das ist eine Secret-Eingabe, die absichtlich
+    nicht von dieser Session automatisiert wurde (secrets werden nie
+    automatisiert in Produktionssysteme eingetragen). Ohne gesetztes
+    `CRON_SECRET` lehnt der Endpoint jeden Aufruf mit 401 ab (fail closed,
+    korrektes Verhalten, kein Bug) — der Cron-Job selbst läuft dann zwar
+    alle 5 Minuten, bewirkt aber nichts. Siehe Abschnitt 10 für den exakt
+    verifizierten Status nach diesem Push.
 15. **Max-3-Follow-ups als Lifetime-Cap, nicht pro Episode** (offene
     Produktentscheidung, dokumentiert in Abschnitt 7) — sobald eine
     Follow-up-Sequenz einmal für eine Conversation existiert (auch wenn
@@ -967,22 +1097,61 @@ Kriterien zurückführbar sein (siehe Beispiel in Phase C).
     kleine, isolierte Anpassung an `shouldScheduleSequence`
     (`followup-rules.ts`), aber eine bewusste Produktentscheidung, kein
     Auto-Fix.
+16. **Scheduler-Provider-Abhängigkeit auf Vercel Cron** (neu, Slice 6) —
+    die Wahl fiel bewusst auf Vercel Cron, weil es zur bereits real
+    laufenden Deployment-Infrastruktur passt (siehe Abschnitt 7), aber
+    das bindet die Ausführungsgarantie an Vercels Cron-Verfügbarkeit und
+    -Genauigkeit (laut Vercel-Dokumentation kann der tatsächliche
+    Ausführungszeitpunkt je nach Plan um bis zu einer Stunde vom
+    Schedule abweichen — für 5-Minuten-Follow-up-Fälligkeiten aktuell
+    keine kritische Größenordnung, aber erwähnenswert). Ein Wechsel des
+    Hosting-Anbieters würde auch einen Scheduler-Wechsel erfordern —
+    der Worker-Endpoint selbst ist aber Plattform-agnostisch (reines
+    HTTP + `CRON_SECRET`), sodass nur `vercel.json` betroffen wäre, nicht
+    die Domainlogik.
+17. **Kein aktives Alerting bei wiederholten Worker-Fehlschlägen** (neu,
+    Slice 6) — Fehler landen strukturiert in `system_events`
+    (`kind='error'`), aber niemand wird aktiv benachrichtigt, wenn der
+    Worker mehrfach hintereinander fehlschlägt oder der Cron-Job aus
+    irgendeinem Grund aufhört zu laufen. Für die aktuelle Projektphase
+    (Demo-/frühe Kundenphase) bewusst nicht gebaut — „keine komplett neue
+    Monitoring-Plattform einführen" war explizite Vorgabe dieses Slices.
+    Spätestens mit dem ersten echten externen Kanal (Slice 7, siehe
+    Abschnitt 10) sollte das erneut bewertet werden, da ein stiller
+    Ausfall dann echte Kundenkommunikation betrifft, nicht nur interne
+    Nachrichten.
+18. **`canonicalMessageDeliveryAdapter` ist weiterhin kein echter externer
+    Kanal** (Erinnerung, unverändert seit Slice 5) — ein „gesendeter"
+    Follow-up ist bis heute ausschließlich ein kanonischer Message-Eintrag
+    im Dashboard, keine E-Mail/WhatsApp/Anruf beim Interessenten. Der
+    Scheduler aus Slice 6 sorgt dafür, dass das jetzt automatisch und
+    regelmäßig passiert — der eigentliche Außenwirkung-Kanal fehlt aber
+    weiterhin vollständig, siehe Empfehlung für Slice 7 in Abschnitt 10.
 
 ---
 
 ## 10. Empfehlung: nächster Schritt
 
-**Update 2026-08-08 (Product-Track-Slice 5, „Automated Lead Follow-ups
-Foundation"):** die zuvor hier empfohlene Follow-up-Engine ist jetzt
-umgesetzt (siehe Abschnitt 6/7) — kanonische `conversation_followups`-
-Tabelle, DB-erzwungenes Max-3-Limit, Scheduling, race-sicherer Worker,
-Abbruch bei Lead-Antwort/geschlossener Conversation, minimale UI. **Noch
-kein automatischer Versand**, weil kein Scheduler den Worker aufruft
-(Risiko 14) — das ist jetzt der unmittelbarste Lücken-Schließer, bevor
-diese Funktion für einen Makler tatsächlich spürbar wird. Rest dieses
-Abschnitts bleibt als Empfehlung für die **weiteren** Schritte stehen —
-weiterhin **nicht** Teil eines bereits erteilten Auftrags, außer explizit
-bestätigt:
+**Update 2026-08-08 (Product-Track-Slice 6, „Production Follow-up
+Scheduler"):** Risiko 14 ist jetzt code-seitig vollständig gelöst — Vercel
+Cron (`vercel.json`, alle 5 Minuten) → geschützter Worker-Endpoint
+(`/api/internal/followups/process`) → `processDueFollowups`, mit
+Kill-Switch, Batch-Limit, Stale-Processing-Recovery und Observability
+(siehe Abschnitt 7). **Exakter, ehrlich verifizierter Deployment-Status
+nach diesem Push** (siehe Abschluss dieses Slices, keine Behauptung ohne
+Prüfung): der Code ist deployt, sobald dieser Commit auf `main` gepusht
+ist (GitHub → Vercel Auto-Deploy, verifiziert bereits in Slice 5/6 aktiv);
+**der Scheduler selbst wird aber erst tatsächlich wirksam, sobald
+`CRON_SECRET` im Vercel-Projekt (Dashboard → Settings → Environment
+Variables) manuell gesetzt wird** — bis dahin läuft der Cron-Job zwar alle
+5 Minuten an, der Endpoint antwortet aber korrekt mit 401 und tut nichts
+(fail closed, kein Datenrisiko, nur noch keine Wirkung). Das ist der eine
+verbleibende manuelle Schritt außerhalb dieses Repos — siehe Risiko 14 für
+Details.
+
+Rest dieses Abschnitts bleibt als Empfehlung für die **weiteren** Schritte
+stehen — weiterhin **nicht** Teil eines bereits erteilten Auftrags, außer
+explizit bestätigt:
 
 **Kann sofort parallel starten (keine Abhängigkeiten untereinander):**
 
@@ -1003,6 +1172,8 @@ bestätigt:
 
 - Rechtstexte-Platzhalter
 - DSGVO-Löschjob-Durchsetzung
+- `CRON_SECRET` in Vercel setzen (siehe oben) — technisch trivial, aber
+  ohne diesen einen manuellen Schritt bleibt der Scheduler wirkungslos
 - `leads.status='termin'`-Dual-Source-Refactor (siehe Risiko 9) — technische
   Schuld, kein akuter Blocker, solange UI/Analytics sie weiterhin korrekt
   behandeln
@@ -1013,32 +1184,27 @@ bestätigt:
   bereits nirgends mehr
 
 **Konkreter nächster Schritt, wenn nur einer gewählt werden soll —
-Empfehlung, nicht Auftrag: Scheduler-Anbindung für `processDueFollowups`
-(Risiko 14).** Begründung, priorisiert nach echtem Makler-Mehrwert: die
-Follow-up-Engine aus diesem Slice hat aktuell **null** sichtbare Wirkung
-für einen Makler, solange niemand `processDueFollowups` aufruft — geplante
-Zeilen entstehen, aber es wird nie tatsächlich nachgefasst. Das ist der
-unmittelbarste, kleinste Schritt, um den in diesem Slice bereits
-geschaffenen Wert tatsächlich auszulösen, kein neues Konzept: entweder
-Supabase `pg_cron` aktivieren (eine `SELECT cron.schedule(...)`-Migration,
-die minütlich/alle 5 Minuten eine SQL-Funktion aufruft, die ihrerseits
-`processDueFollowups`-Logik ausführt — dafür müsste ein Teil der
-TypeScript-Logik als SQL-Funktion nachgebaut oder per `pg_net`/Edge
-Function aufgerufen werden) oder eine Supabase Edge Function mit externem
-Cron-Trigger deployen. Beides ist eine **eigene Infrastrukturentscheidung**
-mit eigenem Risiko (neue laufende Kosten/Komplexität, erste Cron-
-Infrastruktur im Projekt überhaupt) — bewusst nicht in Slice 5 mitgelöst,
-sollte aber vor einer echten externen Kanalintegration (E-Mail/WhatsApp)
-stehen, da diese ohnehin denselben Worker/Scheduler brauchen wird.
-Alternative, ebenfalls sinnvolle Kandidaten für Slice 6: (a) ein echter
-Delivery-Adapter für **einen** Kanal (E-Mail zuerst — geringste
-Einstiegshürde, kein Telefonie-Anbieter nötig), sobald der Scheduler steht;
-(b) Termin-Erinnerungen/Kalender-Sync (Ausbau der bestehenden
+Empfehlung, nicht Auftrag: erster echter externer Delivery-Kanal für
+Follow-ups, E-Mail zuerst.** Begründung, priorisiert nach echtem
+Makler-Mehrwert: die Follow-up-Engine ist jetzt vollständig automatisiert
+(sobald `CRON_SECRET` gesetzt ist) — aber ein „gesendeter" Follow-up ist
+weiterhin nur ein Dashboard-Eintrag, kein Kontakt beim Interessenten
+(Risiko 18). Der gesamte Wert dieser beiden Slices bleibt für einen
+Makler unsichtbar, bis ein Lead tatsächlich eine E-Mail bekommt. Der
+bestehende `FollowupDeliveryAdapter` (Slice 5) ist genau für diesen
+Austausch gebaut — ein neuer Adapter implementiert `deliver()` gegen
+einen echten E-Mail-Versender, ohne Scheduling/Abbruch-/Idempotenzlogik
+anzufassen. E-Mail vor WhatsApp/Telefon, weil kein Telefonie-/Messaging-
+Anbieter-Vertrag nötig ist und die meisten Leads bereits eine E-Mail-
+Adresse hinterlegt haben (siehe Lead-Scoring, Abschnitt 6). Für Slice 7
+noch **nichts** vorwegzunehmen: welcher E-Mail-Anbieter/-Service, ob
+Absenderadresse pro Makler oder zentral, DSGVO-/Abmelde-Anforderungen an
+automatisierte E-Mails — das sind Entscheidungen für den Slice-7-Auftrag
+selbst, nicht für dieses Dokument. Alternative, ebenfalls sinnvolle
+Kandidaten: Termin-Erinnerungen/Kalender-Sync (Ausbau der bestehenden
 `appointments`-Tabelle, Phase B) — unabhängig vom Follow-up-Scheduler,
-ähnlich klein, aber geringerer Hebel auf Neukonversion. Die konkrete
-Entscheidung wird hier bewusst **nicht** vorweggenommen — CLAUDE.md
-verlangt für größere Änderungen einen Plan vor der Umsetzung, und die
-Scheduler-Frage (pg_cron vs. Edge Function) ist genau so ein Fall.
+ähnlich klein, aber geringerer Hebel auf Neukonversion als ein
+funktionierender Follow-up-Kanal.
 
 Diese Empfehlung wird hier **nicht automatisch umgesetzt** — das ist die
 nächste, separat zu bestätigende Aufgabe.

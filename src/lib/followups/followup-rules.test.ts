@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_FOLLOWUP_WORKER_BATCH_SIZE,
+  DEFAULT_STALE_PROCESSING_MINUTES,
   FOLLOWUP_STEP_OFFSET_HOURS,
   FOLLOWUP_STEPS,
   MAX_FOLLOWUP_STEPS,
   computeScheduledFor,
   getFollowupTemplate,
+  isStaleProcessing,
+  parsePositiveIntEnv,
   shouldScheduleSequence,
   shouldSendFollowup,
 } from "./followup-rules";
@@ -128,5 +132,59 @@ describe("shouldSendFollowup", () => {
     expect(
       shouldSendFollowup({ conversationStatus: "closed", hasLeadReplySinceOrigin: true }),
     ).toEqual({ send: false, reason: "conversation_closed" });
+  });
+});
+
+describe("isStaleProcessing", () => {
+  const now = new Date("2026-08-08T12:00:00.000Z");
+
+  it("is not stale when updated just now", () => {
+    expect(isStaleProcessing(now, now, DEFAULT_STALE_PROCESSING_MINUTES)).toBe(false);
+  });
+
+  it("is not stale just under the threshold", () => {
+    const updatedAt = new Date(now.getTime() - (DEFAULT_STALE_PROCESSING_MINUTES * 60_000 - 1000));
+    expect(isStaleProcessing(updatedAt, now, DEFAULT_STALE_PROCESSING_MINUTES)).toBe(false);
+  });
+
+  it("is stale just over the threshold", () => {
+    const updatedAt = new Date(now.getTime() - (DEFAULT_STALE_PROCESSING_MINUTES * 60_000 + 1000));
+    expect(isStaleProcessing(updatedAt, now, DEFAULT_STALE_PROCESSING_MINUTES)).toBe(true);
+  });
+
+  it("respects a custom threshold", () => {
+    const updatedAt = new Date(now.getTime() - 2 * 60_000);
+    expect(isStaleProcessing(updatedAt, now, 1)).toBe(true);
+    expect(isStaleProcessing(updatedAt, now, 5)).toBe(false);
+  });
+});
+
+describe("parsePositiveIntEnv", () => {
+  it("returns the fallback for undefined/missing input", () => {
+    expect(parsePositiveIntEnv(undefined, DEFAULT_FOLLOWUP_WORKER_BATCH_SIZE)).toBe(
+      DEFAULT_FOLLOWUP_WORKER_BATCH_SIZE,
+    );
+  });
+
+  it("returns the fallback for an empty string", () => {
+    expect(parsePositiveIntEnv("", 50)).toBe(50);
+  });
+
+  it("parses a valid positive integer string", () => {
+    expect(parsePositiveIntEnv("25", 50)).toBe(25);
+  });
+
+  it("returns the fallback for zero or negative values — never a silently empty batch", () => {
+    expect(parsePositiveIntEnv("0", 50)).toBe(50);
+    expect(parsePositiveIntEnv("-5", 50)).toBe(50);
+  });
+
+  it("returns the fallback for non-numeric garbage instead of throwing", () => {
+    expect(parsePositiveIntEnv("not-a-number", 50)).toBe(50);
+    expect(parsePositiveIntEnv("NaN", 50)).toBe(50);
+  });
+
+  it("truncates a decimal to its integer part (parseInt semantics), not the fallback", () => {
+    expect(parsePositiveIntEnv("25.7", 50)).toBe(25);
   });
 });

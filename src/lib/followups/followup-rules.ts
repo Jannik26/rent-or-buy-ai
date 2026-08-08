@@ -121,3 +121,45 @@ export function shouldSendFollowup(input: {
   }
   return { send: true };
 }
+
+// ============================================================================
+// Production scheduler config (Product Track slice 6, see ROADMAP.md) — pure
+// defaults/parsing only. Actual env var reads happen in the worker entry
+// point route (src/routes/api/internal/followups.process.ts), never here,
+// so this stays mockable/testable without touching process.env.
+// ============================================================================
+
+/** 25–100 per the task's own guidance — a conservative middle default. Not
+ * client-configurable; only ever read from a server-side env var
+ * (FOLLOWUP_WORKER_BATCH_SIZE) by the worker entry point. */
+export const DEFAULT_FOLLOWUP_WORKER_BATCH_SIZE = 50;
+
+/** How old a `processing` row must be before it's considered abandoned by a
+ * crashed/killed worker run and eligible for recovery (see
+ * recoverStaleProcessingFollowups in followups.functions.ts). The current
+ * delivery adapter is a single DB insert — comfortably faster than this in
+ * every real case — so this is a generous safety margin, not a tight SLA. */
+export const DEFAULT_STALE_PROCESSING_MINUTES = 10;
+
+/** A `processing` row whose `updated_at` (bumped by the same trigger that
+ * stamps every status transition, see the conversation_followups migration)
+ * is older than `staleAfterMinutes` never reached a terminal status —
+ * the runtime that claimed it died before finishing. No new column needed:
+ * `updated_at` already records exactly the "when was this last claimed/
+ * transitioned" moment the recovery check needs. */
+export function isStaleProcessing(updatedAt: Date, now: Date, staleAfterMinutes: number): boolean {
+  const ageMs = now.getTime() - updatedAt.getTime();
+  return ageMs > staleAfterMinutes * 60_000;
+}
+
+/** Parses a server env var into a positive integer, falling back to a safe
+ * default for anything missing/invalid (never throws on bad config — a
+ * misconfigured env var should degrade to the safe default, not take the
+ * whole worker down). Pure — takes the raw string, never reads
+ * process.env itself. */
+export function parsePositiveIntEnv(raw: string | undefined, fallback: number): number {
+  if (!raw) return fallback;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return parsed;
+}
