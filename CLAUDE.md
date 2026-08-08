@@ -1,5 +1,23 @@
 # CLAUDE.md — EstateAI Projektanleitung
 
+**Dieses Dokument enthält dauerhafte Projekt-/Produktfakten und kurze,
+immer geltende Grundsätze — nicht den technischen Implementierungs-
+Workflow.** Der wiederkehrende Ablauf (Git-Preflight, Architektur zuerst
+untersuchen, Supabase/RLS/Tenant-Regeln, Secrets, Quality Gates,
+Production-Verifikations-Wortwahl, das STOPP-Prinzip) steht zentral im
+Skill `estateai-engineering` (`.claude/skills/estateai-engineering/`) und
+muss nicht mehr in jedem Feature-/Slice-Prompt wiederholt werden. Ein
+Slice-Prompt sollte nur noch enthalten: Ziel, Scope (explizit in/out),
+Akzeptanzkriterien und feature-spezifische STOPP-Regeln.
+
+Aufteilung (Engineering-Workflow-Hardening, 2026-08-09):
+
+| Gehört zu | Beispiele |
+|---|---|
+| **CLAUDE.md** (dieses Dokument) | Produktziel, Demo-Flow, was nicht kaputtgehen darf, Tech-Stack, `company_id`-Modell, RE/MAX-Ziel, Sicherheitsregeln (kurz), Ton/Chatlogik, Lead-Scoring, Follow-up-Limit, Kommunikationsstil, Verweis auf `ROADMAP.md` |
+| **Skill `estateai-engineering`** | Git-Preflight/Drift, Architektur-zuerst-Prinzip, Supabase/RLS/Tenant-Regeln im Detail, Secrets-Handling, welche Tests/Gates wann laufen, Live-DB-Fixture-Verifikation, Commit/Push-Mechanik, Production-Verifikations-Wortwahl, STOPP-Liste |
+| **Slice-/Feature-Prompt** | konkretes Feature, Scope (explizit in/out), Akzeptanzkriterien, feature-spezifische STOPP-Regeln, feature-spezifische Tests |
+
 ## Projektziel
 
 EstateAI ist ein KI-Vertriebsassistent für Immobilienunternehmen, Maklerbüros und später einzelne Makler.
@@ -165,6 +183,12 @@ Keine großen Refactorings ohne klaren Nutzen.
 
 Wenn etwas unklar ist:
 Nicht raten, sondern Datei, Tabelle oder Fehlertext prüfen.
+
+Der genaue technische Ablauf dahinter (Git-Preflight/Drift-Prüfung,
+Architektur-Recherche vor Implementierung, Supabase/RLS/Secrets-Regeln,
+welche Tests/Gates wann laufen, Live-DB-Fixture-Verifikation,
+Commit/Push-Mechanik) steht im `estateai-engineering`-Skill — hier nur
+der produktseitige Grundsatz.
 
 ---
 
@@ -450,7 +474,8 @@ Nicht unnötig theoretisch werden.
 
 ## Ausgabe nach Codeänderungen
 
-Nach jeder Änderung ausgeben:
+Für kleine, lokale Änderungen (kein Slice, keine DB-/Security-Berührung)
+reicht dieses kompakte Format:
 
 Geändert:
 - Datei 1
@@ -464,6 +489,13 @@ Test:
 
 Risiko:
 - mögliche Nebenwirkung
+
+Für einen vollständigen Product-Track-Slice gilt stattdessen der
+strukturierte Abschlussbericht, wie er seit Slice 1 etabliert ist
+(Ausgangsstand, Änderungen, Testergebnisse, Deployment-/Verifikations-
+Status in der im `estateai-engineering`-Skill (`production-safety.md`)
+festgelegten Wortwahl, offene Risiken, Empfehlung) — nicht dieses
+Kurzformat.
 
 ---
 
