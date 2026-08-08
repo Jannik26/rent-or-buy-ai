@@ -117,7 +117,7 @@ function ConversationsPage() {
               </div>
             </div>
 
-            <div className="flex-1 min-h-0 overflow-y-auto">
+            <div data-testid="conversation-list" className="flex-1 min-h-0 overflow-y-auto">
               {listQuery.isLoading ? (
                 <div className="p-6 text-sm text-muted-foreground">Lade…</div>
               ) : conversations.length === 0 ? (
@@ -327,7 +327,14 @@ function ConversationDetailPanel({ leadId, onBack }: { leadId: string; onBack: (
         </p>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-6 py-4 space-y-3">
+      <div
+        data-testid="conversation-messages"
+        className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-6 py-4 space-y-3"
+      >
+        {/* data-testid: the last message's text is also legitimately
+            shown as a preview snippet in the list row on the left — real
+            UI duplication, not a selector smell, so a semantic locator
+            alone can't disambiguate the two occurrences for E2E tests. */}
         {detail.messages.length === 0 ? (
           <p className="text-sm text-muted-foreground">Noch keine Nachrichten.</p>
         ) : (

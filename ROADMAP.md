@@ -1,7 +1,8 @@
 # EstateAI — Roadmap & Architekturplan
 
 **Stand: 2026-08-08 · Korrekturrunde 1 + Product-Track-Slice 1
-(Appointments) + Slice 2 (Analytics V1) + Slice 3 (Conversations V1) ·
+(Appointments) + Slice 2 (Analytics V1) + Slice 3 (Conversations V1) +
+Verification-Track-Slice 1 (persistierte Playwright-E2E-Basis) ·
 Kanonisches Planungsdokument.**
 
 Dieses Dokument ersetzt `.lovable/plan.md` als laufende Roadmap. Es wird bei
@@ -108,6 +109,7 @@ Branch/Kontext; **Integration in EstateAI selbst** ist PLANNED)
 | Rate-Limiting/Kostenschutz | ✅ DONE | Tages-/Sessionlimits + Minuten-/Company-Rate-Limit in `widget.chat.ts`, `widget_throttle`-Tabelle |
 | Conversations-Ansicht | ✅ DONE (2026-08-08, Product-Track-Slice 3, „Conversations V1") | Master-Detail-Ansicht (Liste links, Verlauf rechts, responsive) mit echten Daten aus `leads.messages`, read-only. Suche (Name), Filter (Status/Score), Empty States, robuste Normalisierung für Legacy-/Malformed-Nachrichten (unbekannte Rollen, fehlender Inhalt, kaputte Einträge — alle im Browser gegen echte Fixtures verifiziert). Sortierung nach `leads.updated_at` als dokumentierte Näherung, da `messages` **keine Zeitstempel pro Nachricht** besitzt (echter Datenmodell-Befund, siehe Risiko 10). Kein Schreibzugriff, keine neuen Kanäle, keine Migration |
 | Analytics-Dashboard | ✅ DONE (2026-08-07, Product-Track-Slice 2, „Analytics V1") | Echte, tenant-isolierte Kennzahlen statt Platzhalter: Lead-/Termin-KPIs, Zeitfilter (7/30/90 Tage/gesamt), Trends ggü. Vorperiode, 3-stufiger Funnel, Status-/Score-Verteilung, Tagesverläufe (nur für endliche Zeitfenster). Serverseitige Aggregation über eine RLS-gebundene `SECURITY INVOKER`-SQL-Funktion (`analytics_summary`, kein `company_id`-Parameter — Tenant-Isolation entsteht ausschließlich durch RLS), keine PII in der Antwort. `leads.status='termin'` ohne echten Termin wird bewusst **nicht** in „Aktive Termine"/Conversion mitgezählt, sondern separat als Altbestand ausgewiesen (siehe Abschnitt 9, Punkt 9). 12 SQL-Korrektheits-/RLS-Assertions gegen die echte DB (`supabase/tests/analytics_rls.sql`), 22 Unit-Tests für die reinen Kennzahl-Regeln |
+| E2E-Testinfrastruktur (Playwright) | ✅ DONE (2026-08-08, Verification-Track-Slice 1) | `tests/e2e/` — Core-Journey-Suite (Auth-Guard, Dashboard, Leads inkl. Tenant-Isolation, Conversations, Appointments inkl. Storno-/Wiederherstell-Lifecycle, Analytics inkl. Zeitfensterwechsel, Navigation) + ein Mobile-Smoke-Test. Dedizierter QA-Mandant, deterministische/idempotente Fixtures per fixer ID, Auth per Admin-generiertem Magic-Link + `storageState` (kein neuer Signup). 10/10 grün, dreifach reproduzierbar. Ergänzt, ersetzt nicht, die bestehenden SQL-RLS-Tests. Version gepinnt auf `1.45.0` wegen macOS-Ventura-Browser-Binary-Inkompatibilität neuerer Playwright-Versionen auf dieser Entwicklungsmaschine |
 | Automatisierte Follow-ups | ⏳ PLANNED | Nicht implementiert (max. 3 Follow-ups aus CLAUDE.md ist eine Regel, kein Code) |
 | DSGVO-Löschfristen | ⏳ PLANNED | `data-retention.ts` definiert Zielwerte (30 Tage Demo, 6–12 Monate ohne Abschluss) explizit als **noch nicht durchgesetzt** |
 | AI-Provider-Anbindung | ✅ DONE (aber nicht abstrahiert) | Direkt `@ai-sdk/anthropic` via Vercel AI SDK (`ai`-Package), kein Gateway/Abstraktionslayer — funktioniert, aber Wechsel des Modells/Anbieters erfordert Codeänderung an einer Stelle (`ai-gateway.server.ts`, aktuell nur ein dünner Wrapper) |
@@ -321,6 +323,16 @@ Abschnitt 2). Was verbleibt, zerfällt in zwei Tracks, die **unabhängig
 voneinander** bearbeitet werden können — Recht/Billing blockieren die
 Produktentwicklung nicht automatisch:
 
+**Klarstellung (ab Verification-Track-Slice 1, 2026-08-08):** orthogonal zu
+Production/Product Track oben entwickelt sich EstateAI ab jetzt auf zwei
+parallelen **Spuren**: **Track A — Produktentwicklung** (kontinuierlicher
+Feature-Ausbau, siehe Phasen B–H) und **Track B — Continuous Verification**
+(automatisierte Tests, perspektivisch auch echtes Pilotkunden-Feedback).
+Track B **blockiert** Track A nicht — er läuft als Regressions-/
+Qualitäts-Netz parallel mit, nicht als Vorbedingung. Der erste konkrete
+Track-B-Baustein ist die persistierte Playwright-E2E-Basis unten (Production
+Track, Risiko 8 in Abschnitt 9).
+
 **Production Track** (nötig für Monetarisierung/echten Kundenbetrieb, aber
 kein Blocker für Phase-B-Entwicklung):
 
@@ -331,6 +343,26 @@ kein Blocker für Phase-B-Entwicklung):
 - DSGVO-Löschjob umsetzen (`data-retention.ts` → tatsächlicher Cron/Job)
 - Auth/OAuth-Härtung, Monitoring, Tenant/RLS-Verifikation als laufende
   Produktionsreife-Pflege
+- ✅ **DONE (2026-08-08, Verification-Track-Slice 1)** Persistierte
+  Playwright-E2E-Basis (`tests/e2e/`, `playwright.config.ts`) — schützt den
+  vollständigen Core-Journey-Demo-Flow (Auth-Guard → Dashboard → Leads →
+  Conversations → Appointments → Analytics → Navigation) plus ein
+  Mobile-Viewport-Smoke, gegen einen dedizierten QA-Mandanten mit
+  deterministischen, idempotenten Fixtures (feste `e2e`-präfixte IDs,
+  Teardown nach jedem Lauf). Auth ohne neuen Supabase-Signup: Admin-
+  generierter Magic-Link (`auth.admin.generateLink`) + Playwright
+  `storageState`. 10/10 Tests grün, dreifach reproduzierbar hintereinander
+  verifiziert. Schließt Risiko 8 (Abschnitt 9) für die bisherigen
+  Product-Track-Slices. Deckt dabei einen echten Produktfehler auf (siehe
+  unten) — Details: `tests/e2e/README.md`.
+- ✅ **DONE (2026-08-08, im Zuge von Verification-Track-Slice 1)**
+  Echter Bugfix auf `/analytics`: `ResponsiveContainer` (recharts) geriet
+  in eine React-Mount-Race ("Can't perform a state update on a component
+  that hasn't mounted yet"), sichtbar beim Wechsel des Zeitfensters, wenn
+  ein noch nicht gecachtes Fenster `AnalyticsBody` kurzzeitig unmountete.
+  Behoben über `placeholderData: keepPreviousData` (React Query) +
+  `ChartReady`-Wrapper (`analytics.tsx`) — vom neuen E2E-Test aufgedeckt,
+  nicht vorher bekannt.
 
 **Product Track** (kann parallel starten, keine Abhängigkeit von obigem):
 
@@ -610,27 +642,26 @@ Kriterien zurückführbar sein (siehe Beispiel in Phase C).
    `agent_id` kann additiv ergänzt werden (keine Breaking Changes nötig,
    bestehendes Muster aus den letzten Migrationen — additive
    `ALTER TABLE ... ADD COLUMN IF NOT EXISTS` — ist dafür bereits etabliert).
-8. **E2E-Testing-Lücke** — 202 Unit-Tests (alle grün), plus je ein
-   manueller, gegen die echte Projekt-DB verifizierter SQL-Korrektheits-/
-   RLS-Testlauf für Slice 1 (Appointments, 11/11) und Slice 2 (Analytics,
-   12/12). Für Slice 1/2 war ein echter eingeloggter Browser-Durchlauf
-   blockiert (Slice 1: Pflicht-E-Mail-Bestätigung; Slice 2: zusätzlich
-   Supabase-Auth-E-Mail-Rate-Limit nach zu vielen Signups). Für Slice 3
-   (Conversations) gelang ein vollständiger, echter Browser-Durchlauf ohne
-   neuen Signup: ein Admin-generierter Magic-Link (Supabase Admin API,
-   `auth.admin.generate_link`) für den bereits bestehenden QA-Test-Account
-   verschaffte eine reale Session, ohne das Rate-Limit erneut zu
-   beanspruchen — Liste, Suche, Filter, Empty State, lange Conversation
-   (40 Nachrichten, Scroll geprüft) und sämtliche Legacy-/Malformed-Fälle
-   (unbekannte Rolle, fehlender Inhalt, kaputte Einträge, `null`) wurden
-   visuell gegen eigens angelegte und danach vollständig gelöschte
-   Fixture-Leads verifiziert, keine Konsolenfehler. Mobile-Viewport-
-   Screenshot war durch eine Tool-Einschränkung (Fenster-Resize griff
-   nicht) nicht möglich — stattdessen per Code-Review gegen das bereits
-   produktiv laufende `MobileNav`-Breakpoint-Muster verifiziert. Weiterhin:
-   **kein** wiederholbares, im Repo persistiertes Browser-/E2E-Testartefakt
-   (z. B. Playwright). Für einen produktionsreifen Demo-Flow-Schutz
-   (CLAUDE.md-Priorität #1) mittelfristig relevant, Production-Track-Arbeit.
+8. **E2E-Testing-Lücke — ✅ GESCHLOSSEN (2026-08-08, Verification-Track-
+   Slice 1).** Bis dahin: 202 Unit-Tests (alle grün), plus je ein manueller,
+   gegen die echte Projekt-DB verifizierter SQL-Korrektheits-/RLS-Testlauf
+   für Slice 1 (Appointments, 11/11) und Slice 2 (Analytics, 12/12); für
+   Slice 3 (Conversations) ein vollständiger, aber nicht persistierter
+   manueller Browser-Durchlauf. Es fehlte durchgängig ein **wiederholbares,
+   im Repo persistiertes** Browser-/E2E-Testartefakt. Das ist jetzt
+   vorhanden: `tests/e2e/` (Playwright) deckt Auth-Guard, Dashboard, Leads
+   (inkl. Tenant-Isolation), Conversations (Suche/Filter), Appointments
+   (echter Storno-/Wiederherstell-Lifecycle), Analytics (Zeitfensterwechsel)
+   und die Navigation zwischen allen fünf Bereichen ab, plus einen
+   Mobile-Viewport-Smoke-Test — 10/10 Tests grün, dreifach hintereinander
+   reproduzierbar verifiziert (kein einmaliger Zufallstreffer). Auth ohne
+   neuen Supabase-Signup (Admin-generierter Magic-Link + `storageState`),
+   Fixtures dedizierter, isolierter QA-Mandant mit fixen IDs (idempotent,
+   vollständig zurückgebaut nach jedem Lauf). Ergänzt, ersetzt nicht, die
+   bestehenden SQL-RLS-Tests. Details/Architektur: `tests/e2e/README.md`.
+   Verbleibend, bewusst nicht in diesem Slice gelöst (siehe Risiko 11):
+   ein einzelner, spezifisch benannter, dev-server-only React-Warntext wird
+   in der Konsolenfehler-Assertion gezielt gefiltert statt ursachenbehoben.
 9. **`leads.status='termin'` bleibt eine zweite/Legacy-Quelle neben
    `appointments`** — technische Schuld, bewusst nicht in Slice 1 oder 2
    aufgelöst. Der Widget-/AI-Chat kann `status='termin'` weiterhin direkt
@@ -657,25 +688,49 @@ Kriterien zurückführbar sein (siehe Beispiel in Phase C).
     Schreiben mitspeichern (kleine, additive Änderung an der
     JSONB-Struktur oder der Umstieg auf `conversation_threads`/`messages`
     aus Risiko 5) — **kein** Umsetzungsauftrag für dieses Dokument.
+11. **Intermittente, dev-server-only React-Mount-Race** (neu identifiziert,
+    Verification-Track-Slice 1) — der Konsolenfehler "Can't perform a React
+    state update on a component that hasn't mounted yet" trat während der
+    E2E-Entwicklung wiederholt, aber nicht reproduzierbar auf einer festen
+    Seite auf (beobachtet auf `/dashboard`, `/conversations` **und**
+    `/analytics` — nicht chartspezifisch). Gegen einen Produktionsbuild
+    (`vite build` + `vite preview`) in mehreren Versuchen **nie**
+    reproduziert, nur gegen `vite dev`. Verdächtiger Mechanismus: die
+    `_authenticated`-Layout-Route setzt `ssr: false` mit asynchronem
+    `beforeLoad` (`src/routes/_authenticated/route.tsx`) — jede
+    authentifizierte Seite durchläuft dadurch einen
+    pending→resolved-Mount-Übergang, dessen Timing sich unter Vites
+    On-Demand-Modul-Kompilierung im Dev-Server verschiebt. Passt zur
+    bereits vorher dokumentierten, ebenfalls dev-only auftretenden
+    Hydration-Warnung auf `/auth` aus früheren Slices. **Nicht** in diesem
+    Slice ursachenbehoben (würde eine eigene Untersuchung der
+    Router-Pending-Transition erfordern — außerhalb des Schnitts „E2E-
+    Basis", kein Produktionsdefekt). Aktuell in `core-journey.spec.ts`
+    (`KNOWN_DEV_ONLY_MOUNT_RACE`) gezielt aus der
+    Konsolenfehler-Assertion gefiltert (nur dieser eine Text, alles andere
+    lässt den Test weiterhin fehlschlagen) — dokumentierter, bewusster
+    Kompromiss statt stiller Unterdrückung. Ein echter Produktbug wurde bei
+    derselben Untersuchung gefunden und behoben (recharts-`ResponsiveContainer`-
+    Mount-Race auf `/analytics`, siehe Abschnitt 6/Risiko 8).
 
 ---
 
 ## 10. Empfehlung: nächster Schritt
 
-**Update 2026-08-08:** Der ursprüngliche Product-Track-Dreiklang
-(`appointments`-Tabelle, Analytics V1, Conversations V1 — siehe Abschnitt
-2 und 7) ist vollständig umgesetzt, getestet und commitet. Rest dieses
-Abschnitts bleibt als Empfehlung für die **weiteren** Schritte stehen —
-weiterhin **nicht** Teil eines bereits erteilten Auftrags, außer explizit
-bestätigt:
+**Update 2026-08-08 (Verification-Track-Slice 1):** Der Product-Track-
+Dreiklang (`appointments`, Analytics V1, Conversations V1) **und** die
+persistierte Playwright-E2E-Basis (Track B, siehe Abschnitt 6/Risiko 8)
+sind jetzt beide umgesetzt, getestet und commitet. Rest dieses Abschnitts
+bleibt als Empfehlung für die **weiteren** Schritte stehen — weiterhin
+**nicht** Teil eines bereits erteilten Auftrags, außer explizit bestätigt:
 
 **Kann sofort parallel starten (keine Abhängigkeiten untereinander):**
 
+- *Product Track (Track A):* automatisierte, begrenzte Lead-Follow-ups
+  (max. 3, siehe CLAUDE.md-Regel und Empfehlung unten) — bislang reine
+  Regel ohne Code (siehe Abschnitt 2)
 - *Production Track:* Rechtstexte (Impressum/Datenschutz) mit echten
   Angaben füllen — kleinster Aufwand, größtes Compliance-Risiko wenn offen
-- *Production Track:* persistiertes Browser-E2E-Testartefakt (Playwright)
-  für den Demo-Flow — schließt Risiko 8 für alle drei bisherigen Slices
-  gleichzeitig, kein neues Produkt-Feature
 - *Konzeptarbeit:* Immobilien-Datenmodell (Phase C, `properties`-Entität)
   planen, damit Matching darauf aufbauen kann
 
@@ -691,19 +746,31 @@ bestätigt:
 
 - Rechtstexte-Platzhalter
 - DSGVO-Löschjob-Durchsetzung
-- E2E-Testabdeckung als persistiertes Artefakt (siehe Risiko 8)
 - `leads.status='termin'`-Dual-Source-Refactor (siehe Risiko 9) und
   fehlende Per-Message-Zeitstempel (siehe Risiko 10) — technische Schuld,
   kein akuter Blocker, solange UI/Analytics sie weiterhin korrekt behandeln
+- Intermittente dev-only Mount-Race-Konsolenwarnung (Risiko 11) — kein
+  Produktionsdefekt, aktuell gezielt aus der E2E-Assertion gefiltert
 
-Konkreter nächster Schritt, wenn nur **einer** gewählt werden soll:
-**persistiertes Playwright-E2E für den Login-/Demo-Flow** — kleinster,
-klar abgegrenzter Schnitt, schützt direkt CLAUDE.md-Priorität #1 (Demo-
-Flow darf nicht kaputtgehen) und schließt die in allen drei Slices
-dokumentierte E2E-Lücke, statt sie ein viertes Mal aufzuschieben.
-Alternative, gleichwertig kleine Kandidaten: Rechtstexte befüllen
-(Production Track) oder Erinnerungen für Termine (Ausbau der bestehenden
-`appointments`-Tabelle, siehe Phase B).
+**Konkreter nächster Schritt (Track A / Product Track), wenn nur einer
+gewählt werden soll: automatisierte, begrenzte Lead-Follow-ups (max. 3,
+CLAUDE.md-Regel).** Begründung, priorisiert nach echtem Makler-Mehrwert,
+nicht nach technischer Einfachheit: CLAUDE.md nennt das Kernziel „aus
+anonymen Website-Besuchern sollen qualifizierte Immobilien-Leads werden" —
+heute endet der Flow beim gespeicherten Lead; ob und wann ein Makler
+reagiert, ist reine Handarbeit. Ein Lead, der nach dem ersten Chat nicht
+sofort antwortet, verliert ohne Follow-up an Dringlichkeit und Score-Aktua-
+lität; das ist der Punkt im Flow mit dem größten Leck zwischen „Lead
+erfasst" und „Lead wird tatsächlich zum Geschäft". Datenmodell und
+Lead-Scoring (`lead-summary.server.ts`, `scoreFromData`) stehen bereits,
+`appointments`/Analytics können die Wirkung sofort messen (Conversion-
+Funnel existiert schon), und die Regel ist in CLAUDE.md bereits bewusst
+begrenzt (max. 3, nicht aggressiv) — kein neues Datenmodell-Fass, klar
+abgegrenzter Schnitt. Alternative, ebenfalls hochwertige Kandidaten:
+Termin-Erinnerungen/Kalender-Sync (Ausbau der bestehenden
+`appointments`-Tabelle, Phase B) — geringerer Hebel auf Lead-Konversion,
+da er erst nach einem bereits vereinbarten Termin greift, aber ähnlich
+klein und direkt aus vorhandenen Daten umsetzbar.
 
 Diese Empfehlung wird hier **nicht automatisch umgesetzt** — das ist die
 nächste, separat zu bestätigende Aufgabe.

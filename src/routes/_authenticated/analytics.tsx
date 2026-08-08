@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import {
   Bar,
@@ -38,6 +38,17 @@ function AnalyticsPage() {
     queryKey: ["analytics-summary", window_],
     queryFn: () => fetchSummary({ data: { window: window_ } }),
     refetchInterval: 60000,
+    // Keeps the previous window's data on screen while the next window
+    // fetches, instead of `data` briefly going undefined on every filter
+    // click. Without this, switching to a not-yet-cached window unmounts
+    // AnalyticsBody (and everything under it, including the charts) and
+    // remounts it once the new data lands — on every remount the
+    // ResponsiveContainer/ResizeObserver mount race below can reappear,
+    // which is what made that console-error E2E check (see
+    // tests/e2e/core-journey.spec.ts) intermittent rather than reliably
+    // fixed by ChartReady alone. Also a straightforward UX win: no
+    // "Lade…" flash when switching the time window.
+    placeholderData: keepPreviousData,
   });
 
   const data = query.data;
@@ -220,47 +231,49 @@ function AnalyticsBody({ data }: { data: AnalyticsData }) {
       <div className="mt-6 grid gap-4 lg:grid-cols-2">
         <SeriesCard title="Lead-Verlauf" window={data.window}>
           {data.series.leadsByDay.length > 0 && data.series.leadsByDay.some((d) => d.count > 0) ? (
-            <ResponsiveContainer width="100%" height={220}>
-              <LineChart
-                data={data.series.leadsByDay}
-                margin={{ top: 8, right: 8, left: -16, bottom: 0 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                <XAxis
-                  dataKey="date"
-                  tickFormatter={formatDayTick}
-                  tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
-                  axisLine={false}
-                  tickLine={false}
-                  minTickGap={24}
-                />
-                <YAxis
-                  allowDecimals={false}
-                  tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
-                  axisLine={false}
-                  tickLine={false}
-                  width={28}
-                />
-                <Tooltip
-                  labelFormatter={formatDayTick}
-                  contentStyle={{
-                    fontSize: 12,
-                    borderRadius: 8,
-                    border: "1px solid var(--border)",
-                    background: "var(--card)",
-                  }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="count"
-                  name="Neue Leads"
-                  stroke="var(--primary)"
-                  strokeWidth={2}
-                  dot={{ r: 2 }}
-                  activeDot={{ r: 4 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
+            <ChartReady>
+              <ResponsiveContainer width="100%" height={220}>
+                <LineChart
+                  data={data.series.leadsByDay}
+                  margin={{ top: 8, right: 8, left: -16, bottom: 0 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                  <XAxis
+                    dataKey="date"
+                    tickFormatter={formatDayTick}
+                    tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                    axisLine={false}
+                    tickLine={false}
+                    minTickGap={24}
+                  />
+                  <YAxis
+                    allowDecimals={false}
+                    tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                    axisLine={false}
+                    tickLine={false}
+                    width={28}
+                  />
+                  <Tooltip
+                    labelFormatter={formatDayTick}
+                    contentStyle={{
+                      fontSize: 12,
+                      borderRadius: 8,
+                      border: "1px solid var(--border)",
+                      background: "var(--card)",
+                    }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="count"
+                    name="Neue Leads"
+                    stroke="var(--primary)"
+                    strokeWidth={2}
+                    dot={{ r: 2 }}
+                    activeDot={{ r: 4 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </ChartReady>
           ) : (
             <ChartEmptyState window={data.window} />
           )}
@@ -269,60 +282,62 @@ function AnalyticsBody({ data }: { data: AnalyticsData }) {
         <SeriesCard title="Termine über Zeit" window={data.window}>
           {data.series.appointmentsByDay.length > 0 &&
           data.series.appointmentsByDay.some((d) => d.scheduled + d.completed + d.cancelled > 0) ? (
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart
-                data={data.series.appointmentsByDay}
-                margin={{ top: 8, right: 8, left: -16, bottom: 0 }}
-              >
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                <XAxis
-                  dataKey="date"
-                  tickFormatter={formatDayTick}
-                  tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
-                  axisLine={false}
-                  tickLine={false}
-                  minTickGap={24}
-                />
-                <YAxis
-                  allowDecimals={false}
-                  tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
-                  axisLine={false}
-                  tickLine={false}
-                  width={28}
-                />
-                <Tooltip
-                  labelFormatter={formatDayTick}
-                  contentStyle={{
-                    fontSize: 12,
-                    borderRadius: 8,
-                    border: "1px solid var(--border)",
-                    background: "var(--card)",
-                  }}
-                />
-                <Legend wrapperStyle={{ fontSize: 11 }} />
-                <Bar
-                  dataKey="scheduled"
-                  name="Geplant"
-                  stackId="a"
-                  fill="var(--gold)"
-                  radius={[0, 0, 0, 0]}
-                />
-                <Bar
-                  dataKey="completed"
-                  name="Abgeschlossen"
-                  stackId="a"
-                  fill="var(--success)"
-                  radius={[0, 0, 0, 0]}
-                />
-                <Bar
-                  dataKey="cancelled"
-                  name="Storniert"
-                  stackId="a"
-                  fill="var(--muted-foreground)"
-                  radius={[4, 4, 0, 0]}
-                />
-              </BarChart>
-            </ResponsiveContainer>
+            <ChartReady>
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart
+                  data={data.series.appointmentsByDay}
+                  margin={{ top: 8, right: 8, left: -16, bottom: 0 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                  <XAxis
+                    dataKey="date"
+                    tickFormatter={formatDayTick}
+                    tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                    axisLine={false}
+                    tickLine={false}
+                    minTickGap={24}
+                  />
+                  <YAxis
+                    allowDecimals={false}
+                    tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
+                    axisLine={false}
+                    tickLine={false}
+                    width={28}
+                  />
+                  <Tooltip
+                    labelFormatter={formatDayTick}
+                    contentStyle={{
+                      fontSize: 12,
+                      borderRadius: 8,
+                      border: "1px solid var(--border)",
+                      background: "var(--card)",
+                    }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Bar
+                    dataKey="scheduled"
+                    name="Geplant"
+                    stackId="a"
+                    fill="var(--gold)"
+                    radius={[0, 0, 0, 0]}
+                  />
+                  <Bar
+                    dataKey="completed"
+                    name="Abgeschlossen"
+                    stackId="a"
+                    fill="var(--success)"
+                    radius={[0, 0, 0, 0]}
+                  />
+                  <Bar
+                    dataKey="cancelled"
+                    name="Storniert"
+                    stackId="a"
+                    fill="var(--muted-foreground)"
+                    radius={[4, 4, 0, 0]}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </ChartReady>
           ) : (
             <ChartEmptyState window={data.window} />
           )}
@@ -335,6 +350,31 @@ function AnalyticsBody({ data }: { data: AnalyticsData }) {
 function formatDayTick(value: string) {
   const d = new Date(`${value}T00:00:00.000Z`);
   return d.toLocaleDateString("de-DE", { day: "2-digit", month: "short" });
+}
+
+/**
+ * Recharts' `ResponsiveContainer` measures itself via a ResizeObserver
+ * whose first callback can fire before React considers the tree "mounted"
+ * when the container itself only appears conditionally once query data
+ * arrives (exactly the case for both charts below) — that race is what
+ * produces React's "Can't perform a state update on a component that
+ * hasn't mounted yet" warning (caught by the E2E console-error assertion,
+ * see tests/e2e/core-journey.spec.ts). Deferring the chart's first render
+ * by one effect tick (i.e. until after mount has definitely completed)
+ * is the standard, minimal fix for this specific timing class — the
+ * placeholder is on-screen for a single frame, not a visible loading
+ * state.
+ *
+ * This alone isn't sufficient if the surrounding tree unmounts and
+ * remounts on every window-filter change (each remount re-arms the same
+ * race) — see the `placeholderData: keepPreviousData` option on the
+ * query above, which keeps AnalyticsBody mounted across filter switches
+ * so ChartReady only ever mounts fresh once, on the page's first load.
+ */
+function ChartReady({ children }: { children: React.ReactNode }) {
+  const [ready, setReady] = useState(false);
+  useEffect(() => setReady(true), []);
+  return ready ? <>{children}</> : <div className="h-[220px]" />;
 }
 
 function ChartEmptyState({ window: w }: { window: AnalyticsWindow }) {

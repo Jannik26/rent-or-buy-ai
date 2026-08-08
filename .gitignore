@@ -28,6 +28,12 @@ supabase/.temp
 .wrangler/
 .dev.vars
 
+# Playwright E2E
+/test-results/
+/playwright-report/
+/blob-report/
+tests/e2e/.auth/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
