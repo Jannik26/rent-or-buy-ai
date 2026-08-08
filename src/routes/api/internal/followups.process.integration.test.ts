@@ -351,7 +351,7 @@ describe.skipIf(!hasCredentials)("production follow-up worker route (real DB)", 
     );
     const alwaysFailingAdapter: FollowupDeliveryAdapter = {
       async deliver() {
-        return { delivered: false, errorCode: "simulated_delivery_failure" };
+        return { delivered: false, outcome: "failed", errorCode: "simulated_delivery_failure" };
       },
     };
 

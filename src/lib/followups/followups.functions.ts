@@ -264,15 +264,35 @@ export async function handleFollowupsAfterMessages(
 // ============================================================================
 
 export type FollowupDeliveryInput = {
+  /** The conversation_followups row's own id — a stable, already-persisted
+   * value that channel adapters needing delivery idempotency (e.g. the
+   * email adapter, see src/lib/followups/email-delivery-adapter.ts) can
+   * reuse as a provider idempotency key. Unused by canonicalMessageDeliveryAdapter. */
+  followupId: string;
   conversationId: string;
   companyId: string;
   step: FollowupStep;
   content: string;
 };
 
+/**
+ * Three-way, not a boolean — Product Track slice 7 (see ROADMAP.md) added
+ * the `skipped` outcome for "there was nothing to deliver to" (e.g. no lead
+ * email on file), which task Phase 7 explicitly requires to be distinct
+ * from a technical `failed`: it's not an error, it shouldn't have an
+ * error_code, and — importantly — it should never look like something a
+ * future retry mechanism ought to keep trying.
+ * `messageId` on the delivered branch is nullable for one specific, narrow
+ * case: an external send genuinely succeeded but the subsequent canonical
+ * message write itself failed (see email-delivery-adapter.ts) — reporting
+ * `delivered: false` there would risk a future retry re-sending an email
+ * that already went out, which is strictly worse than a followup row
+ * that's correctly `sent` with no linked canonical message.
+ */
 export type FollowupDeliveryResult =
-  | { delivered: true; messageId: string }
-  | { delivered: false; errorCode: string };
+  | { delivered: true; messageId: string | null; provider?: string; providerMessageId?: string }
+  | { delivered: false; outcome: "skipped"; skipReason: string }
+  | { delivered: false; outcome: "failed"; errorCode: string };
 
 export interface FollowupDeliveryAdapter {
   deliver(
@@ -282,14 +302,16 @@ export interface FollowupDeliveryAdapter {
 }
 
 /**
- * The only adapter this slice ships: "delivering" a follow-up means
- * recording it as a normal canonical `sender_type: 'ai'` message in the
- * conversation (via the one central appendMessages write path — task
- * section 13, no second message-write path). This is not a no-op stub
- * that discards the content, and it is not a real external channel either
- * — it's the same persistence a live AI reply already gets, visible to
- * the Makler in the dashboard. No email/WhatsApp/phone package is
- * installed or called.
+ * The default adapter: "delivering" a follow-up means recording it as a
+ * normal canonical `sender_type: 'ai'` message in the conversation (via the
+ * one central appendMessages write path — task section 13, no second
+ * message-write path). This is not a no-op stub that discards the content
+ * — it's the same persistence a live AI reply already gets, visible to the
+ * Makler in the dashboard. Still the adapter actually used whenever the
+ * email adapter isn't configured/enabled (see
+ * src/routes/api/internal/followups.process.ts) — the original slice-5/6
+ * demo-safe behavior is unchanged unless an operator deliberately opts
+ * into real email delivery.
  */
 export const canonicalMessageDeliveryAdapter: FollowupDeliveryAdapter = {
   async deliver(client, input) {
@@ -300,9 +322,9 @@ export const canonicalMessageDeliveryAdapter: FollowupDeliveryAdapter = {
     });
     const message = inserted[0];
     if (!message) {
-      return { delivered: false, errorCode: "no_message_inserted" };
+      return { delivered: false, outcome: "failed", errorCode: "no_message_inserted" };
     }
-    return { delivered: true, messageId: message.id };
+    return { delivered: true, messageId: message.id, provider: "canonical" };
   },
 };
 
@@ -318,6 +340,10 @@ export type ProcessDueFollowupsResult = {
   sent: number;
   cancelled: number;
   failed: number;
+  /** New in Product Track slice 7 (see ROADMAP.md) — a followup with no
+   * valid delivery target (e.g. no lead email on file). Always 0 when using
+   * canonicalMessageDeliveryAdapter, which never produces this outcome. */
+  skipped: number;
 };
 
 /**
@@ -431,7 +457,13 @@ export async function processDueFollowups(
     .limit(batchSize);
   if (candidatesError) throw new Error(candidatesError.message);
 
-  const result: ProcessDueFollowupsResult = { claimed: 0, sent: 0, cancelled: 0, failed: 0 };
+  const result: ProcessDueFollowupsResult = {
+    claimed: 0,
+    sent: 0,
+    cancelled: 0,
+    failed: 0,
+    skipped: 0,
+  };
   if (!candidates || candidates.length === 0) return result;
 
   const { data: claimed, error: claimError } = await client
@@ -484,6 +516,7 @@ export async function processDueFollowups(
       }
 
       const delivery = await adapter.deliver(client, {
+        followupId: row.id,
         conversationId: row.conversation_id,
         companyId: row.company_id,
         step: row.step as FollowupStep,
@@ -493,10 +526,27 @@ export async function processDueFollowups(
       if (delivery.delivered) {
         const { error: sentError } = await client
           .from("conversation_followups")
-          .update({ status: "sent", sent_at: now.toISOString(), message_id: delivery.messageId })
+          .update({
+            status: "sent",
+            sent_at: now.toISOString(),
+            message_id: delivery.messageId,
+            delivery_provider: delivery.provider ?? null,
+            provider_message_id: delivery.providerMessageId ?? null,
+          })
           .eq("id", row.id);
         if (sentError) throw new Error(sentError.message);
         result.sent += 1;
+      } else if (delivery.outcome === "skipped") {
+        const { error: skipError } = await client
+          .from("conversation_followups")
+          .update({
+            status: "skipped",
+            skipped_at: now.toISOString(),
+            skip_reason: delivery.skipReason,
+          })
+          .eq("id", row.id);
+        if (skipError) throw new Error(skipError.message);
+        result.skipped += 1;
       } else {
         const { error: failError } = await client
           .from("conversation_followups")

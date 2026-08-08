@@ -24,9 +24,14 @@ import {
   parsePositiveIntEnv,
 } from "@/lib/followups/followup-rules";
 import {
+  canonicalMessageDeliveryAdapter,
   processDueFollowups,
   recoverStaleProcessingFollowups,
+  type FollowupDeliveryAdapter,
 } from "@/lib/followups/followups.functions";
+import { createEmailDeliveryAdapter } from "@/lib/followups/email-delivery-adapter";
+import { createResendEmailProvider } from "@/lib/email/providers/resend-provider";
+import { isEmailDeliveryEnabled, resolveEmailProviderConfig } from "@/lib/email/email-rules";
 
 /** Constant-time secret comparison — hashing both sides to a fixed 32-byte
  * digest first means `timingSafeEqual` never short-circuits on a length
@@ -58,6 +63,48 @@ export function isAuthorized(request: Request, expectedSecret: string | undefine
   const providedSecret = authHeader.startsWith("Bearer ") ? authHeader.slice("Bearer ".length) : "";
   if (!providedSecret) return false;
   return timingSafeEqualStrings(providedSecret, expectedSecret);
+}
+
+/** Decides which FollowupDeliveryAdapter this run should use — the one
+ * place slice 7's email delivery is wired into slice 5/6's worker. Pure:
+ * takes already-read env-var strings as plain arguments (never reads
+ * process.env itself), so the decision logic itself is unit-testable
+ * without touching real env vars or constructing a real provider.
+ *
+ * Safe by construction (task Phase 3/15): real email delivery is used only
+ * when BOTH `EMAIL_DELIVERY_ENABLED` is explicitly truthy AND a complete,
+ * syntactically valid provider config is present. Any other combination —
+ * disabled, or enabled but not (yet) configured — silently falls back to
+ * the existing canonicalMessageDeliveryAdapter, i.e. the exact slice 5/6
+ * demo-safe behavior. There is no error state for "misconfigured": an
+ * operator who sets EMAIL_DELIVERY_ENABLED=true without also setting
+ * EMAIL_PROVIDER_API_KEY/EMAIL_SENDER_ADDRESS gets the safe fallback, not a
+ * broken worker. */
+export function selectFollowupDeliveryAdapter(env: {
+  emailDeliveryEnabledRaw: string | undefined;
+  apiKey: string | undefined;
+  senderAddress: string | undefined;
+  replyToAddress: string | undefined;
+}): { adapter: FollowupDeliveryAdapter; mode: "email" | "canonical" } {
+  if (isEmailDeliveryEnabled(env.emailDeliveryEnabledRaw)) {
+    const providerConfig = resolveEmailProviderConfig({
+      apiKey: env.apiKey,
+      senderAddress: env.senderAddress,
+      replyToAddress: env.replyToAddress,
+    });
+    if (providerConfig) {
+      const provider = createResendEmailProvider(providerConfig.apiKey);
+      const adapter = createEmailDeliveryAdapter({
+        provider,
+        senderConfig: {
+          fromAddress: providerConfig.senderAddress,
+          replyToAddress: providerConfig.replyToAddress,
+        },
+      });
+      return { adapter, mode: "email" };
+    }
+  }
+  return { adapter: canonicalMessageDeliveryAdapter, mode: "canonical" };
 }
 
 const DISABLING_VALUES = new Set(["false", "0", "no", "off"]);
@@ -116,6 +163,15 @@ export async function handleFollowupWorkerRequest(request: Request): Promise<Res
     process.env.FOLLOWUP_STALE_PROCESSING_MINUTES,
     DEFAULT_STALE_PROCESSING_MINUTES,
   );
+  // Product Track slice 7 (see ROADMAP.md): which delivery channel this run
+  // uses. Reads the raw env vars exactly once, here — everything this
+  // decision depends on stays pure/testable (selectFollowupDeliveryAdapter).
+  const { adapter, mode: deliveryMode } = selectFollowupDeliveryAdapter({
+    emailDeliveryEnabledRaw: process.env.EMAIL_DELIVERY_ENABLED,
+    apiKey: process.env.EMAIL_PROVIDER_API_KEY,
+    senderAddress: process.env.EMAIL_SENDER_ADDRESS,
+    replyToAddress: process.env.EMAIL_REPLY_TO,
+  });
 
   try {
     const now = new Date();
@@ -126,21 +182,31 @@ export async function handleFollowupWorkerRequest(request: Request): Promise<Res
       now,
       staleAfterMinutes,
     });
-    const result = await processDueFollowups(supabaseAdmin, { now, batchSize });
+    const result = await processDueFollowups(supabaseAdmin, { now, batchSize, adapter });
     const durationMs = Date.now() - startedAt;
 
     // Observability (task section 12): reuses the existing system_events
     // table/pattern (already used by widget.chat.ts) rather than a new
-    // logging system. Only counts and the run id — no message content, no
-    // lead/company identifiers, nothing personally identifiable.
+    // logging system. Only counts, the run id, and which delivery mode was
+    // active — no message content, no lead/company identifiers, no email
+    // addresses, no API keys, nothing personally identifiable (task
+    // Phase 13).
     await supabaseAdmin.from("system_events").insert({
       kind: "success",
       source: "followups.worker",
-      message: `run ${runId}: claimed ${result.claimed}, sent ${result.sent}, cancelled ${result.cancelled}, failed ${result.failed}, recovered ${recovery.recovered}`,
-      context: { runId, durationMs, batchSize, staleAfterMinutes, ...result, recovery },
+      message: `run ${runId}: mode=${deliveryMode} claimed ${result.claimed}, sent ${result.sent}, cancelled ${result.cancelled}, skipped ${result.skipped}, failed ${result.failed}, recovered ${recovery.recovered}`,
+      context: {
+        runId,
+        durationMs,
+        batchSize,
+        staleAfterMinutes,
+        deliveryMode,
+        ...result,
+        recovery,
+      },
     });
 
-    return new Response(JSON.stringify({ runId, durationMs, ...result, recovery }), {
+    return new Response(JSON.stringify({ runId, durationMs, deliveryMode, ...result, recovery }), {
       status: 200,
       headers: { "content-type": "application/json" },
     });

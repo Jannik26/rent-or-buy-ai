@@ -5,7 +5,8 @@
 Verification-Track-Slice 1 (persistierte Playwright-E2E-Basis) +
 Product-Track-Slice 4 (Conversations Foundation — kanonische
 Conversations-/Messages-Domain) + Slice 5 (Automated Lead Follow-ups
-Foundation) + Slice 6 (Production Follow-up Scheduler) · Kanonisches
+Foundation) + Slice 6 (Production Follow-up Scheduler) + Slice 7
+(Production E-Mail Delivery Foundation) · Kanonisches
 Planungsdokument.**
 
 Dieses Dokument ersetzt `.lovable/plan.md` als laufende Roadmap. Es wird bei
@@ -113,7 +114,7 @@ Branch/Kontext; **Integration in EstateAI selbst** ist PLANNED)
 | Conversations-Ansicht | ✅ DONE (2026-08-08, Product-Track-Slice 3 „Conversations V1" + Slice 4 „Conversations Foundation") | Master-Detail-Ansicht (Liste links, Verlauf rechts, responsive), Suche (Name), Filter (Status/Score), Empty States — seit Slice 4 auf der **kanonischen** `conversations`/`messages`-Domain statt `leads.messages`-JSONB (siehe Abschnitt 7). Sortierung nach `conversations.last_message_at` (echte Spalte, per Trigger gepflegt), Reihenfolge innerhalb einer Conversation nach `sequence` (nie `created_at` — siehe Risiko 10, jetzt gelöst). Lead-Detailseite liest denselben Server-Function-Aufruf, keine zweite Wahrheit mehr. Weiterhin kein Schreibzugriff in der UI selbst (nur der Widget-Chat schreibt, jetzt in die kanonische Domain, siehe unten) |
 | Analytics-Dashboard | ✅ DONE (2026-08-07, Product-Track-Slice 2, „Analytics V1") | Echte, tenant-isolierte Kennzahlen statt Platzhalter: Lead-/Termin-KPIs, Zeitfilter (7/30/90 Tage/gesamt), Trends ggü. Vorperiode, 3-stufiger Funnel, Status-/Score-Verteilung, Tagesverläufe (nur für endliche Zeitfenster). Serverseitige Aggregation über eine RLS-gebundene `SECURITY INVOKER`-SQL-Funktion (`analytics_summary`, kein `company_id`-Parameter — Tenant-Isolation entsteht ausschließlich durch RLS), keine PII in der Antwort. `leads.status='termin'` ohne echten Termin wird bewusst **nicht** in „Aktive Termine"/Conversion mitgezählt, sondern separat als Altbestand ausgewiesen (siehe Abschnitt 9, Punkt 9). 12 SQL-Korrektheits-/RLS-Assertions gegen die echte DB (`supabase/tests/analytics_rls.sql`), 22 Unit-Tests für die reinen Kennzahl-Regeln |
 | E2E-Testinfrastruktur (Playwright) | ✅ DONE (2026-08-08, Verification-Track-Slice 1) | `tests/e2e/` — Core-Journey-Suite (Auth-Guard, Dashboard, Leads inkl. Tenant-Isolation, Conversations, Appointments inkl. Storno-/Wiederherstell-Lifecycle, Analytics inkl. Zeitfensterwechsel, Navigation) + ein Mobile-Smoke-Test. Dedizierter QA-Mandant, deterministische/idempotente Fixtures per fixer ID, Auth per Admin-generiertem Magic-Link + `storageState` (kein neuer Signup). 10/10 grün, dreifach reproduzierbar. Ergänzt, ersetzt nicht, die bestehenden SQL-RLS-Tests. Version gepinnt auf `1.45.0` wegen macOS-Ventura-Browser-Binary-Inkompatibilität neuerer Playwright-Versionen auf dieser Entwicklungsmaschine |
-| Automatisierte Follow-ups | 🟡 PARTIAL (2026-08-08, Slice 5 „Foundation" + Slice 6 „Production Scheduler") | Engine + Scheduler beide vollständig: kanonische `conversation_followups`-Tabelle, DB-verankertes Max-3-Limit, Scheduling (24h/72h/144h), race-sicherer Batch-/Claim-Worker (`processDueFollowups`) inkl. Stale-Processing-Recovery, Abbruch bei Lead-Antwort/geschlossener Conversation, Vercel-Cron-Anbindung (alle 5 Min.) über einen geschützten Worker-Endpoint, minimale UI. **Verbleibend:** `CRON_SECRET` muss noch manuell in Vercel gesetzt werden (siehe Risiko 14) — bis dahin lehnt der Endpoint jeden Aufruf korrekt mit 401 ab, sendet aber nichts; keine echten externen Kanäle (E-Mail/WhatsApp/Telefon, siehe Risiko 18) — „gesendet" bedeutet weiterhin ausschließlich ein kanonischer `sender_type='ai'`-Eintrag im Conversation-Verlauf, nie ein tatsächlicher Kontakt beim Interessenten |
+| Automatisierte Follow-ups | 🟡 PARTIAL (2026-08-08, Slice 5 „Foundation" + Slice 6 „Production Scheduler" + Slice 7 „E-Mail Delivery Foundation") | Engine + Scheduler + E-Mail-Kanal-Foundation vollständig code-seitig fertig: kanonische `conversation_followups`-Tabelle, DB-verankertes Max-3-Limit, Scheduling (24h/72h/144h), race-sicherer Batch-/Claim-Worker (`processDueFollowups`) inkl. Stale-Processing-Recovery, Abbruch bei Lead-Antwort/geschlossener Conversation, Vercel-Cron-Anbindung (alle 5 Min.), austauschbarer `EmailDeliveryAdapter` (Resend, providerseitige Idempotency-Keys, HTML+Text, KI-Transparenz-Hinweis), minimale UI. **Verbleibend, bevor tatsächlich eine echte E-Mail rausgeht:** `EMAIL_DELIVERY_ENABLED`/`EMAIL_PROVIDER_API_KEY`/`EMAIL_SENDER_ADDRESS` sind serverseitig standardmäßig nicht gesetzt (sicherer Default aus, siehe Abschnitt 7/Risiko 19) — ohne echten Resend-Account + verifizierte Absenderdomain bleibt der Kanal inaktiv und der Worker verhält sich weiterhin exakt wie in Slice 6 (nur kanonischer Dashboard-Eintrag). Zusätzlich: `CRON_SECRET` wurde laut Auftraggeber gesetzt, aber die Live-Verifikation in diesem Slice zeigt den authentifizierten Cron-Request weiterhin mit 401 (siehe Risiko 14, aktualisiert) — ungeklärt, kein Blocker für dieses Slice, aber offen |
 | DSGVO-Löschfristen | ⏳ PLANNED | `data-retention.ts` definiert Zielwerte (30 Tage Demo, 6–12 Monate ohne Abschluss) explizit als **noch nicht durchgesetzt** |
 | AI-Provider-Anbindung | ✅ DONE (aber nicht abstrahiert) | Direkt `@ai-sdk/anthropic` via Vercel AI SDK (`ai`-Package), kein Gateway/Abstraktionslayer — funktioniert, aber Wechsel des Modells/Anbieters erfordert Codeänderung an einer Stelle (`ai-gateway.server.ts`, aktuell nur ein dünner Wrapper) |
 | Agent/Widget-ID-Struktur (RE/MAX-Vorbereitung) | ⏳ PLANNED | Nur `company_id` existiert; `agent_id`/`widget_id` noch nicht im Schema — siehe Abschnitt 7 |
@@ -458,6 +459,46 @@ werden können, statt auf Phase A zu warten:
   keine Schemaänderung, RLS erneut vollständig verifiziert (15/15,
   unverändert). Bewusst nicht Teil dieses Slices: echter externer
   Versandkanal, neue Follow-up-Texte/-Intervalle, UI-Änderungen.
+- ✅ **DONE (2026-08-08, Slice 7, „Production E-Mail Delivery
+  Foundation")** Erster echter externer Versandkanal für Follow-ups —
+  vollständige Details in Abschnitt 7. Kurzfassung: dreischichtige
+  Adapter-Kette (`FollowupDeliveryAdapter` → `EmailDeliveryAdapter` →
+  `EmailProvider` → Resend), Provider bewusst gewählt (Idempotency-Key-
+  Unterstützung gegen Resends Doku verifiziert, TypeScript-freundlich,
+  Vercel-Marketplace-fähig), aber kein Account/keine verifizierte Domain
+  vorhanden — Kanal ist code-seitig fertig, aber standardmäßig
+  deaktiviert (`EMAIL_DELIVERY_ENABLED` default aus) und fällt ohne
+  vollständige Provider-Konfiguration automatisch auf den bestehenden
+  `canonicalMessageDeliveryAdapter` zurück (kein Risiko für den
+  bestehenden Demo-Flow). Zustellreihenfolge bewusst „Provider-Send vor
+  kanonischer Message" (nicht umgekehrt), kombiniert mit dem Follow-up-
+  Zeilen-eigenen `id` als Idempotency-Key — schließt das Crash-Fenster
+  ohne neue Outbox-Tabelle (volle Analyse in Abschnitt 7). Recipient-
+  Resolution serverseitig aus `leads.email`, fehlende/ungültige Adresse
+  wird `skipped` (ein bereits im ursprünglichen Slice-5-CHECK
+  vorgesehener, aber bis jetzt ungenutzter Status), nie `failed`.
+  KI-Transparenz-Hinweis in jeder Mail, ehrlich formulierter (nicht
+  automatisierter) Antwort-Hinweis statt eines vorgetäuschten
+  One-Click-Unsubscribe. Minimale additive Migration (`skipped_at`,
+  `delivery_provider`, `provider_message_id` auf
+  `conversation_followups`, keine neue Tabelle), RLS unverändert
+  (15/15 erneut grün), Security Advisor unverändert. 25 neue Unit-Tests
+  + 11/11 neue Integrationsszenarien (inkl. echter Nebenläufigkeit und
+  einer simulierten Crash-Recovery mit Idempotency-Key-Wiederverwendung)
+  gegen die verbundene Projekt-DB grün, bestehende Slice-5/6-Suiten
+  unverändert grün. Ein echter Cross-Test-Bug dabei gefunden und
+  behoben: parallele Vitest-Testdateien, die beide den globalen
+  Worker-Endpoint aufrufen, konnten sich gegenseitig fälliges
+  Fixture-Material wegclaimen bzw. eine `fetch`-Stub-Instanz einer Datei
+  in eine andere durchsickern lassen — behoben über
+  `fileParallelism: false` (`vitest.config.ts`), was tatsächlich näher
+  an der echten Produktion liegt (dort gibt es exakt einen Scheduler,
+  nie zwei parallele). Bewusst nicht Teil dieses Slices: Bounce-/
+  Complaint-Webhooks, Inbound-Reply-Verarbeitung, automatisiertes
+  Retry/Backoff bei transienten Provider-Fehlern, echter
+  One-Click-Unsubscribe-Endpoint, echter Provider-Roundtrip (keine
+  Live-Credentials vorhanden) — alle als neue Risiken in Abschnitt 9
+  festgehalten.
 - Lead-Pipeline-Verbesserungen, weitere Maklerfunktionen
 - Beginn von Phase C (Matching/Vergleich/Kosten) kann parallel geplant
   werden, sobald das Immobilien-Datenmodell (Abschnitt 7) steht
@@ -853,6 +894,185 @@ Nachrichteninhalte, keine Lead-/Personendaten.
 verifizierten Stand (Code deployt vs. Cron tatsächlich aktiv vs. Secret
 gesetzt) — hier bewusst nicht vorweggenommen, um Duplikation zu vermeiden.
 
+**Production E-Mail Delivery Foundation (✅ DONE, 2026-08-08, Slice 7):**
+erster echter externer Kanal für die Follow-up-Engine, ohne die
+kanonische Conversations-/Message-Architektur oder die Slice-5/6-
+Scheduling-/Idempotenzlogik anzufassen.
+
+*Architekturkette (Vorgabe der Aufgabenstellung, wörtlich umgesetzt):*
+`FollowupDeliveryAdapter` (bestehend, Slice 5) → `EmailDeliveryAdapter`
+(`src/lib/followups/email-delivery-adapter.ts`, neu) → `EmailProvider`
+(`src/lib/email/email-provider.ts`, neutrales Modell — `EmailAddress`,
+`EmailMessage`, `EmailSendResult`) → `ResendEmailProvider`
+(`src/lib/email/providers/resend-provider.ts`, einziger Ort mit
+Resend-spezifischem Request-/Response-Wissen). Kein Provider-Detail
+leckt oberhalb der Provider-Adapter-Schicht — ein späterer
+Providerwechsel bliebe auf eine neue Datei plus eine Zeile in der
+Adapter-Auswahl beschränkt.
+
+*Provider-Entscheidung:* Resend, nach Untersuchung (kein bestehender
+Account/Package im Repo gefunden — `grep` auf
+`resend|sendgrid|postmark|mailgun|ses|nodemailer|smtp` über das ganze
+Repo ergab nichts) und mit dem Auftraggeber bestätigt. Begründung:
+TypeScript-native API, **Idempotency-Key-Unterstützung explizit gegen
+Resends öffentliche Doku verifiziert** (`Idempotency-Key`-Header, 24h-
+Fenster — die Grundlage der ganzen Doppelversand-Schutz-Strategie unten,
+nicht angenommen), Domain-Verifikation + Bounce-/Complaint-/Delivered-
+Webhooks vorhanden (`sent`, `delivered`, `bounced`, `complained`, u. a.
+— per Recherche verifiziert), Inbound-E-Mail-Empfang ebenfalls vorhanden
+(`email.received`-Event, eigenes „Inbound"-Feature), als
+Vercel-Marketplace-Integration installierbar. Geprüfte Alternative:
+Postmark (ähnliche Tiefe, aber kein kostenloser Dauertarif, keine
+native Vercel-Marketplace-Integration) — nicht gewählt.
+**Absenderdomain: bewusst noch nicht verifiziert** — der Auftraggeber
+hat sich in diesem Slice explizit gegen eine sofortige Domain-Festlegung
+entschieden („noch keine Domain verifiziert — offen lassen"); der Code
+liest die Absenderadresse ausschließlich aus `EMAIL_SENDER_ADDRESS`
+(Env-Var), erfindet nie einen Default. Damit ist der Kanal vollständig
+implementiert, aber bis zur echten Account-/Domain-Einrichtung inert.
+
+*Canonical-Message-Invariante (Aufgabenstellung Phase 5, wörtlich
+erfüllt):* der externe Versand erzeugt **keinen** zweiten unabhängigen
+Conversation-Pfad. `EmailDeliveryAdapter` schreibt exakt dieselbe
+`messages`-Zeile (`sender_type='ai'`, Inhalt = das unveränderte
+deterministische Template aus `getFollowupTemplate`) wie
+`canonicalMessageDeliveryAdapter` — die E-Mail-spezifische Betreff-/
+Anrede-/Signatur-/Transparenz-Hülle existiert ausschließlich in der
+tatsächlich verschickten E-Mail, nie im gespeicherten kanonischen
+Nachrichtentext. Das ist zugleich Voraussetzung dafür, dass
+`recoverStaleProcessingFollowups` (unverändert aus Slice 6) für E-Mail
+weiterhin korrekt funktioniert — der Content-Abgleich dort erwartet
+genau diesen unveränderten Text.
+
+*Delivery Ordering (Aufgabenstellung Phase 6 — explizite Variantenwahl
+mit Begründung):* **Provider-Send zuerst, kanonische Message danach**
+(Variante B, nicht A). Begründung anhand einer echten Crash-Fenster-
+Analyse:
+- Variante A (Message zuerst) hätte einen stillen, aber echten Fehler
+  erlaubt: ein Absturz zwischen Message-Insert und Provider-Aufruf hätte
+  von der bestehenden Slice-6-Recovery (die eine existierende passende
+  Message als „wurde gesendet" interpretiert) fälschlich als erfolgreich
+  zugestellt gewertet werden können, obwohl nie eine E-Mail rausging —
+  eine unbemerkte Nicht-Zustellung, die als Erfolg gemeldet wird.
+- Variante B birgt dagegen ein anderes Risiko: ein Absturz zwischen
+  erfolgreichem Provider-Send und dem Schreiben der kanonischen Message
+  bzw. dem finalen Status-Update. **Gelöst über denselben Mechanismus,
+  der ohnehin für die Aufgabenstellung gefordert war:** jede
+  E-Mail-Zustellung verwendet die eigene, bereits persistierte
+  `conversation_followups.id` als Provider-Idempotency-Key. Ein erneuter
+  Versuch (nach Stale-Recovery-Reset oder — hypothetisch — einem zweiten
+  Claim) sendet denselben Key erneut; Resend gibt laut eigener Doku
+  innerhalb von 24h dieselbe ursprüngliche Antwort zurück, statt ein
+  zweites Mal real zuzustellen. Damit bleibt auch der zweite,
+  gefährlichere Crash-Fall abgesichert, ohne eine neue Outbox-Tabelle.
+  Durch einen echten Integrationstest verifiziert (simulierter Crash
+  zwischen Provider-Accept und Status-Update, danach Stale-Recovery —
+  kein zweiter `fetch`-Aufruf an Resend).
+
+*Outbox-Entscheidung (Aufgabenstellung Phase 23/24 — explizit
+begründet, nicht übersprungen):* **keine separate Outbox-/
+Delivery-Attempt-Tabelle.** `conversation_followups` ist durch
+`UNIQUE(conversation_id, step)` und den Max-3-Lifetime-Cap strukturell
+bereits eine 1-Zeile-pro-Zustellversuch-Tabelle; zusammen mit der
+Idempotency-Key-Wiederverwendung oben und der unveränderten
+Slice-6-Stale-Recovery sind alle betrachteten Crash-Fenster geschlossen,
+ohne eine neue Queue-Infrastruktur einzuführen. Eine Outbox hätte sich
+nur gelohnt, wenn ein einzelner Follow-up mehrere unabhängige,
+gleichzeitig offene Zustellversuche bräuchte (z. B. echtes
+Multi-Channel-Fan-out) — das ist hier nicht der Fall.
+
+*Recipient Resolution (Aufgabenstellung Phase 7):* serverseitig aus
+`leads.email` (nullable, unvalidierte `text`-Spalte — vor diesem Slice
+existierte keine echte Format-Validierung dafür im Code, nur eine
+Plus-Adress-Sperre in `validate-email.ts` für Auth-Zwecke). Fehlt die
+Adresse oder ist sie syntaktisch kein gültiges E-Mail-Format (per
+`zod`, gleiche Bibliothek wie bereits in `settings/schemas.ts`
+verwendet), wird der Follow-up **`skipped`** (neuer, im ursprünglichen
+Slice-5-CHECK bereits erlaubter, aber bis jetzt ungenutzter Status),
+nie `failed` — kein Fehler-Code, kein Alerting-Rauschen für einen
+fachlich normalen Zustand. Vor dem eigentlichen Versand werden dieselben
+Bedingungen wie beim kanonischen Kanal erneut geprüft (offene
+Conversation, kein Lead-Reply seit Planung) — unverändert aus Slice 6.
+
+*Sender Identity (Aufgabenstellung Phase 8):* Envelope-/Provider-„From"
+ist immer die zentral konfigurierte, (sobald verifiziert) EstateAI-
+Absenderadresse (`EMAIL_SENDER_ADDRESS`) — nie eine unverifizierte
+Maklerdomain. Nur der **Display-Name** enthält den Firmennamen
+(`"<Firmenname> · automatisierter Assistent"`), sanitisiert gegen
+Header-Injection (CR/LF/Steuerzeichen entfernt, eigene Sanitizer-
+Funktion, unabhängig von dem, was der Provider selbst ohnehin
+escaped). Reply-To ebenfalls zentral konfiguriert
+(`EMAIL_REPLY_TO`, fällt auf die Absenderadresse zurück) — bewusst
+**kein** Versuch, eine echte Maklerantwortadresse vorzutäuschen, solange
+keine echte Inbound-Verarbeitung existiert (siehe Risiko 21). Erweiterbar
+für spätere Multi-Tenant-Absender (Aufgabenstellung Phase 20): die
+Rückgabeform von `resolveSenderIdentity` ist bereits das, was eine
+künftige per-Firma-Override-Logik liefern müsste — nur die interne
+Auflösung würde sich ändern, keine Aufrufer. Keine Mehrfach-Domain-
+Verwaltung gebaut, solange sie nicht gebraucht wird.
+
+*Subject/Body (Aufgabenstellung Phase 9-11):* deterministische,
+schrittabhängige Betreffzeilen (kein LLM-Aufruf), enthalten nur den
+Firmennamen, keine sensiblen Lead-Daten. Text-Version ist die primäre,
+robuste Fassung; HTML ist eine schlichte, responsive Single-Column-
+Hülle ohne externe Bilder/Tracker/Template-Engine, beide bauen auf
+demselben, event. HTML-escapeten `getFollowupTemplate`-Text auf.
+KI-Transparenz: sichtbare Fußzeile in jeder Mail
+(„Diese Nachricht wurde automatisiert von EstateAI im Auftrag von
+&lt;Firma&gt; gesendet.") plus der bereits erwähnte Display-Name-Zusatz —
+keine vorgetäuschte menschliche Identität.
+
+*Opt-out (Aufgabenstellung Phase 12 — Lücke bewusst offen dokumentiert,
+nicht verschleiert):* Lead-Antwort und „Follow-ups stoppen" (beide
+unverändert aus Slice 5) verhindern weiterhin zuverlässig jeden
+weiteren automatischen Versand. Was **fehlt**: ein echter
+One-Click-Unsubscribe-Mechanismus mit eigenem öffentlichen Token-
+Endpoint — das würde eine eigene, neue Security-Fläche aufmachen und
+wurde bewusst nicht in dieses Slice gequetscht (Aufgabenstellung
+erlaubt das explizit als Abgrenzung für einen Folge-Slice). Der
+E-Mail-Footer enthält stattdessen einen ehrlichen, nicht-automatisierten
+Hinweis („antworten Sie einfach auf diese E-Mail") — das erreicht
+tatsächlich einen echten, von Menschen überwachten Posteingang
+(`EMAIL_REPLY_TO`), auch wenn nichts davon automatisch verarbeitet wird.
+Rechtlich/produktseitig als Lücke in Risiko 23 festgehalten, nicht als
+„Unsubscribe unterstützt" beschönigt.
+
+*Secrets/Kill-Switch (Aufgabenstellung Phase 14/15):*
+`EMAIL_PROVIDER_API_KEY` ausschließlich serverseitig gelesen (nur in
+der Route, als Konstruktor-Argument an `createResendEmailProvider`
+durchgereicht, nie selbst aus `process.env` in tieferen Schichten
+gelesen). Kein `VITE_*`-Prefix, kein Secret im Test-Fixture-Klartext
+(alle Test-Keys eindeutig als `re_test_...` erkennbar), kein Secret in
+`system_events`. Eigener Kill-Switch `EMAIL_DELIVERY_ENABLED` — anders
+als `FOLLOWUP_WORKER_ENABLED` **default AUS**, nicht an (das
+risikoreichste Verhalten dieses gesamten Slices ist ein tatsächlich
+versendeter externer Kontakt, daher der sicherere Default). Fällt bei
+`enabled=true`, aber unvollständiger/ungültiger Provider-Konfiguration
+automatisch und ohne Fehlerzustand auf den bestehenden
+`canonicalMessageDeliveryAdapter` zurück — es gibt keinen Zustand, in
+dem ein Fehlkonfigurations-Versuch den Worker bricht.
+
+*Rate-Limits/Retry (Aufgabenstellung Phase 21/22):* keine zusätzliche
+Parallelisierung eingeführt — der Worker verarbeitet Follow-ups
+weiterhin sequenziell innerhalb eines Laufs (unverändert aus Slice 6),
+was bei Batch-Größe 50 pro 5-Minuten-Fenster unkritisch für Resends
+Standard-Rate-Limits ist. Transiente Provider-Fehler (Timeout/429/5xx,
+per Statuscode unterschieden vom Adapter, `errorCode`-Präfix
+`transient:`/`permanent:`) landen aktuell direkt auf `failed` **ohne**
+automatisches Backoff/Retry — bewusst nicht gebaut (Aufgabenstellung:
+„nicht improvisieren, als Technical Debt dokumentieren"), siehe
+Risiko 22. Normale Scheduler-Retries führen trotzdem nie zu
+Doppelversand (siehe Delivery-Ordering oben) — `failed`-Zeilen werden
+vom Claim (`status = 'scheduled'`) grundsätzlich nie erneut aufgegriffen.
+
+*Datenmodell:* additive Migration
+(`20260808192012_add_conversation_followups_email_delivery_columns.sql`)
+— `skipped_at` (spiegelt `sent_at`/`cancelled_at`/`failed_at`),
+`delivery_provider`, `provider_message_id` (bewusst kanalneutral
+benannt, nicht `email_...` — könnte später auch für WhatsApp
+wiederverwendet werden). Keine neue Tabelle, keine RLS-Änderung nötig
+(15/15 Assertions erneut grün, siehe Abschnitt 9).
+
 Für kommende Phasen wahrscheinlich nötig (grobe Skizze, vor Umsetzung im
 Detail zu planen):
 
@@ -1071,20 +1291,27 @@ Kriterien zurückführbar sein (siehe Beispiel in Phase C).
     unbewiesene Erklärung.
 14. **`processDueFollowups` ist nicht an einen automatischen Scheduler
     angeschlossen — 🟡 Code-seitig GELÖST (2026-08-08, Slice 6), Aktivierung
-    hängt noch von einem manuellen Schritt außerhalb des Repos ab.** Der
-    Worker-Endpoint (`/api/internal/followups/process`) und die
-    `vercel.json`-Cron-Konfiguration (alle 5 Minuten) sind vollständig
-    implementiert, getestet (9/9 Integrationsszenarien inkl. echter
-    Nebenläufigkeit) und commitet. **Was noch fehlt, bevor der Scheduler
-    tatsächlich Follow-ups versendet:** die Env-Var `CRON_SECRET` muss im
-    Vercel-Projekt gesetzt werden (Vercel Dashboard → Project Settings →
-    Environment Variables) — das ist eine Secret-Eingabe, die absichtlich
-    nicht von dieser Session automatisiert wurde (secrets werden nie
-    automatisiert in Produktionssysteme eingetragen). Ohne gesetztes
-    `CRON_SECRET` lehnt der Endpoint jeden Aufruf mit 401 ab (fail closed,
-    korrektes Verhalten, kein Bug) — der Cron-Job selbst läuft dann zwar
-    alle 5 Minuten, bewirkt aber nichts. Siehe Abschnitt 10 für den exakt
-    verifizierten Status nach diesem Push.
+    unklar/ungeklärt (aktualisiert Slice 7).** Der Worker-Endpoint
+    (`/api/internal/followups/process`) und die `vercel.json`-Cron-
+    Konfiguration (alle 5 Minuten) sind vollständig implementiert,
+    getestet (9/9 Integrationsszenarien inkl. echter Nebenläufigkeit) und
+    commitet. Der Cron-Job selbst feuert nachweislich zuverlässig alle 5
+    Minuten (per Vercel Runtime Logs verifiziert). **Neuer Befund aus
+    Slice 7:** der Auftraggeber gab an, `CRON_SECRET` im Vercel-Projekt
+    gesetzt und Production neu deployt zu haben; diese Session hat das
+    technisch nachverfolgt (neues Deployment `dpl_41vXKPSzskgnV17S4j6xn9KgMZQ4`,
+    `READY`, matcht den erwarteten Commit) — der erste Cron-Tick **nach**
+    diesem Redeploy (19:10:06 UTC) antwortete laut Vercel Runtime Logs
+    aber weiterhin mit **401**, nicht mit einem erfolgreichen,
+    authentifizierten Lauf. Mögliche Ursachen (nicht geprüft, da außerhalb
+    der Werkzeuge dieser Session — kein Zugriff auf die tatsächliche
+    Vercel-Env-Var-Konfiguration): `CRON_SECRET` wurde ggf. nur für
+    „Preview", nicht für „Production" gesetzt; ein Tippfehler/Leerzeichen
+    im Wert; oder ein Timing-Problem zwischen Setzen und Redeploy. **Nicht
+    geraten, sondern transparent als offen dokumentiert** — dieser Fund
+    wurde im Slice-7-Abschlussbericht an den Auftraggeber gemeldet, kein
+    STOPP-Kriterium (fail closed bleibt sicher, kein Datenrisiko), aber
+    weiterhin ungeklärt zum Zeitpunkt dieses Commits.
 15. **Max-3-Follow-ups als Lifetime-Cap, nicht pro Episode** (offene
     Produktentscheidung, dokumentiert in Abschnitt 7) — sobald eine
     Follow-up-Sequenz einmal für eine Conversation existiert (auch wenn
@@ -1116,38 +1343,108 @@ Kriterien zurückführbar sein (siehe Beispiel in Phase C).
     irgendeinem Grund aufhört zu laufen. Für die aktuelle Projektphase
     (Demo-/frühe Kundenphase) bewusst nicht gebaut — „keine komplett neue
     Monitoring-Plattform einführen" war explizite Vorgabe dieses Slices.
-    Spätestens mit dem ersten echten externen Kanal (Slice 7, siehe
-    Abschnitt 10) sollte das erneut bewertet werden, da ein stiller
-    Ausfall dann echte Kundenkommunikation betrifft, nicht nur interne
-    Nachrichten.
-18. **`canonicalMessageDeliveryAdapter` ist weiterhin kein echter externer
-    Kanal** (Erinnerung, unverändert seit Slice 5) — ein „gesendeter"
-    Follow-up ist bis heute ausschließlich ein kanonischer Message-Eintrag
-    im Dashboard, keine E-Mail/WhatsApp/Anruf beim Interessenten. Der
-    Scheduler aus Slice 6 sorgt dafür, dass das jetzt automatisch und
-    regelmäßig passiert — der eigentliche Außenwirkung-Kanal fehlt aber
-    weiterhin vollständig, siehe Empfehlung für Slice 7 in Abschnitt 10.
+    **Update Slice 7:** jetzt konkret relevanter, nicht mehr nur
+    theoretisch — sobald `EMAIL_DELIVERY_ENABLED` aktiv geschaltet wird,
+    betrifft ein stiller Ausfall echte Kundenkommunikation, nicht nur
+    interne Nachrichten. Weiterhin nicht gebaut, aber jetzt mit höherer
+    Priorität für einen künftigen Hardening-Slice (siehe Risiko 17
+    Verweis in Abschnitt 10).
+18. **`canonicalMessageDeliveryAdapter` als Default — 🟡 TEILWEISE GELÖST
+    (2026-08-08, Slice 7).** Seit Slice 7 existiert mit dem
+    `EmailDeliveryAdapter` erstmals ein echter externer Kanal, der
+    tatsächlich eine E-Mail beim Interessenten zustellen kann — aber er
+    ist **standardmäßig inaktiv** (`EMAIL_DELIVERY_ENABLED` default aus,
+    zusätzlich fehlt ein echter Provider-Account/eine verifizierte
+    Domain, siehe Risiko 19). Bis diese externen Voraussetzungen erfüllt
+    sind, bleibt der tatsächliche Produktionszustand identisch zu vorher:
+    ein „gesendeter" Follow-up ist ein kanonischer Message-Eintrag im
+    Dashboard, kein tatsächlicher Kontakt beim Interessenten. Der Code-
+    Pfad zur echten Zustellung existiert jetzt vollständig und getestet —
+    nur der letzte, bewusst nicht automatisierte Schritt (Account/Domain/
+    Secrets) fehlt noch.
+19. **Kein E-Mail-Provider-Account/keine verifizierte Absenderdomain**
+    (neu, Slice 7) — `EMAIL_PROVIDER_API_KEY` und `EMAIL_SENDER_ADDRESS`
+    sind in Production nicht gesetzt; ohne beide bleibt
+    `EMAIL_DELIVERY_ENABLED` wirkungslos (fällt automatisch auf den
+    kanonischen Kanal zurück, siehe Risiko 18). Das ist eine bewusste,
+    mit dem Auftraggeber abgestimmte Entscheidung dieses Slices („noch
+    keine Domain verifiziert — offen lassen"), kein Versehen. Nötiger
+    externer Schritt vor Aktivierung: Resend-Account anlegen, Domain
+    (z. B. eine Subdomain von `estateai.de`) per DNS verifizieren,
+    `EMAIL_PROVIDER_API_KEY`/`EMAIL_SENDER_ADDRESS` (+ optional
+    `EMAIL_REPLY_TO`) in Vercel setzen, dann `EMAIL_DELIVERY_ENABLED=true`.
+20. **Kein Bounce-/Complaint-/Delivered-Webhook-Handling** (neu, Slice 7)
+    — Resend liefert diese Events nachweislich (`delivered`, `bounced`,
+    `complained`, u. a., per Recherche verifiziert), aber diese Session
+    hat bewusst keinen Webhook-Endpoint gebaut (Aufgabenstellung: „nur
+    wenn ohne Scope-Explosion sauber möglich" — ein neuer öffentlicher,
+    signaturverifizierter Endpoint plus Bounce-/Suppression-Datenmodell
+    ist eine eigene sicherheitsrelevante Erweiterung, kein Ein-Zeiler).
+    EstateAI weiß aktuell nicht, ob eine „gesendete" E-Mail tatsächlich
+    im Postfach ankam oder bounced ist — nur, dass der Provider sie
+    angenommen hat (`outcome: "accepted"`, siehe `EmailSendResult`).
+    Kandidat für Slice 8 Option A (Hardening).
+21. **Keine Inbound-Reply-Verarbeitung** (neu, Slice 7) — Resend
+    unterstützt Inbound-E-Mail-Empfang (`email.received`-Event, eigenes
+    „Inbound"-Feature), aber eine Lead-Antwort per E-Mail fließt aktuell
+    nirgends automatisch in `conversations`/`messages` zurück und stoppt
+    keine offenen Follow-ups. Der `EMAIL_REPLY_TO`-Posteingang ist
+    aktuell nur ein von Menschen überwachtes Postfach, keine
+    automatisierte Pipeline. Kandidat für Slice 8 Option B (Inbound).
+22. **Kein automatisiertes Retry/Backoff bei transienten Provider-
+    Fehlern** (neu, Slice 7) — ein Timeout/429/5xx von Resend landet
+    direkt auf `failed` (mit `transient:`-Präfix im `error_code` zur
+    späteren Unterscheidung), wird aber nie automatisch erneut versucht;
+    das erfordert manuelles Eingreifen oder eine künftige Backoff-
+    Infrastruktur. Bewusst nicht gebaut (Aufgabenstellung: „nicht
+    improvisieren, als Technical Debt dokumentieren"). Kein
+    Doppelversand-Risiko dadurch (`failed`-Zeilen werden vom Claim nie
+    erneut aufgegriffen), aber ein Follow-up mit einem rein
+    netzwerkbedingten, einmaligen Fehler bleibt dauerhaft unzugestellt,
+    bis jemand die Zeile manuell zurücksetzt.
+23. **Kein echter One-Click-Unsubscribe** (neu, Slice 7) — der
+    E-Mail-Footer enthält einen ehrlichen „antworten Sie einfach"-
+    Hinweis statt eines vorgetäuschten Unsubscribe-Mechanismus (siehe
+    Abschnitt 7). Für niedriges, transaktionsnahes Volumen aktuell kein
+    akuter Compliance-Blocker, aber bei wachsendem Versandvolumen
+    relevant (Gmail/Yahoo verlangen ab bestimmten Versandmengen einen
+    echten One-Click-Unsubscribe-Header). Braucht eine eigene öffentliche
+    Token-/Endpoint-Architektur — bewusst als Folge-Slice abgegrenzt,
+    nicht in Slice 7 halbfertig gebaut.
+24. **`fileParallelism: false` verlangsamt die gesamte Testsuite** (neu,
+    Slice 7, operative Randnotiz, kein Produktrisiko) — die in diesem
+    Slice gefundene Cross-File-Testinterferenz (siehe Abschnitt 6) wurde
+    über sequenzielle statt paralleler Testdatei-Ausführung gelöst
+    (`vitest.config.ts`). Das erhöht die Laufzeit von `npm test` spürbar
+    (von wenigen Sekunden auf über eine Minute), ist aber die korrekte
+    Lösung, kein Workaround (spiegelt die reale Ein-Scheduler-Situation
+    in Produktion). Falls die Testsuite künftig deutlich wächst, könnte
+    eine gezieltere Lösung (z. B. nur Integrationstests sequenziell,
+    Unit-Tests weiterhin parallel) sinnvoll werden.
 
 ---
 
 ## 10. Empfehlung: nächster Schritt
 
-**Update 2026-08-08 (Product-Track-Slice 6, „Production Follow-up
-Scheduler"):** Risiko 14 ist jetzt code-seitig vollständig gelöst — Vercel
-Cron (`vercel.json`, alle 5 Minuten) → geschützter Worker-Endpoint
-(`/api/internal/followups/process`) → `processDueFollowups`, mit
-Kill-Switch, Batch-Limit, Stale-Processing-Recovery und Observability
-(siehe Abschnitt 7). **Exakter, ehrlich verifizierter Deployment-Status
-nach diesem Push** (siehe Abschluss dieses Slices, keine Behauptung ohne
-Prüfung): der Code ist deployt, sobald dieser Commit auf `main` gepusht
-ist (GitHub → Vercel Auto-Deploy, verifiziert bereits in Slice 5/6 aktiv);
-**der Scheduler selbst wird aber erst tatsächlich wirksam, sobald
-`CRON_SECRET` im Vercel-Projekt (Dashboard → Settings → Environment
-Variables) manuell gesetzt wird** — bis dahin läuft der Cron-Job zwar alle
-5 Minuten an, der Endpoint antwortet aber korrekt mit 401 und tut nichts
-(fail closed, kein Datenrisiko, nur noch keine Wirkung). Das ist der eine
-verbleibende manuelle Schritt außerhalb dieses Repos — siehe Risiko 14 für
-Details.
+**Update 2026-08-08 (Product-Track-Slice 7, „Production E-Mail Delivery
+Foundation"):** erster echter externer Kanal für Follow-ups ist
+vollständig implementiert, getestet und commitet — siehe Abschnitt 7 für
+die volle Architektur. **Exakter, ehrlich verifizierter Aktivierungsstatus
+(keine Behauptung ohne Prüfung):** der Code deployt automatisch mit
+diesem Push (GitHub → Vercel Auto-Deploy, weiterhin aktiv), aber der
+E-Mail-Kanal selbst ist **nicht live** — `EMAIL_DELIVERY_ENABLED` ist
+default aus, und selbst wenn er gesetzt würde, fehlen
+`EMAIL_PROVIDER_API_KEY`/`EMAIL_SENDER_ADDRESS` vollständig in
+Production (kein Resend-Account, keine verifizierte Domain — bewusste
+Entscheidung dieses Slices, siehe Risiko 19). Bis diese drei Env-Vars
+gesetzt sind, verhält sich das System exakt wie am Ende von Slice 6:
+Follow-ups werden weiterhin nur als kanonischer Dashboard-Eintrag
+„gesendet". **Zusätzlicher, unabhängiger Befund aus diesem Slice:** die
+Scheduler-Aktivierung aus Slice 6 (Risiko 14) ist trotz laut Auftraggeber
+gesetztem `CRON_SECRET` und einem Redeploy laut Vercel Runtime Logs
+weiterhin nicht wirksam (der erste Cron-Tick nach dem Redeploy antwortete
+noch mit 401) — offen, nicht in diesem Slice behoben (siehe Risiko 14 für
+Details), kein STOPP-Grund, aber wichtig für den Auftraggeber zu wissen.
 
 Rest dieses Abschnitts bleibt als Empfehlung für die **weiteren** Schritte
 stehen — weiterhin **nicht** Teil eines bereits erteilten Auftrags, außer
@@ -1172,8 +1469,17 @@ explizit bestätigt:
 
 - Rechtstexte-Platzhalter
 - DSGVO-Löschjob-Durchsetzung
-- `CRON_SECRET` in Vercel setzen (siehe oben) — technisch trivial, aber
-  ohne diesen einen manuellen Schritt bleibt der Scheduler wirkungslos
+- `CRON_SECRET`-Aktivierung ungeklärt (siehe Risiko 14, aktualisiert
+  Slice 7) — laut Auftraggeber gesetzt, aber Live-Verifikation zeigt
+  weiterhin 401 nach dem Redeploy; braucht eine erneute Prüfung der
+  tatsächlichen Vercel-Env-Var-Konfiguration (Production- vs.
+  Preview-Scope, exakter Wert)
+- E-Mail-Kanal-Aktivierung (siehe Risiko 19) — Resend-Account anlegen,
+  Absenderdomain per DNS verifizieren, `EMAIL_PROVIDER_API_KEY`/
+  `EMAIL_SENDER_ADDRESS`/`EMAIL_REPLY_TO` in Vercel setzen, dann
+  `EMAIL_DELIVERY_ENABLED=true` — technisch vollständig vorbereitet,
+  aber bewusst nicht automatisiert (Secrets/Domain-Entscheidungen sind
+  keine Dinge, die eine Session selbst festlegt)
 - `leads.status='termin'`-Dual-Source-Refactor (siehe Risiko 9) — technische
   Schuld, kein akuter Blocker, solange UI/Analytics sie weiterhin korrekt
   behandeln
@@ -1183,28 +1489,32 @@ explizit bestätigt:
   Abschnitt 7) — kein akuter Blocker, die App liest die Legacy-Spalte
   bereits nirgends mehr
 
-**Konkreter nächster Schritt, wenn nur einer gewählt werden soll —
-Empfehlung, nicht Auftrag: erster echter externer Delivery-Kanal für
-Follow-ups, E-Mail zuerst.** Begründung, priorisiert nach echtem
-Makler-Mehrwert: die Follow-up-Engine ist jetzt vollständig automatisiert
-(sobald `CRON_SECRET` gesetzt ist) — aber ein „gesendeter" Follow-up ist
-weiterhin nur ein Dashboard-Eintrag, kein Kontakt beim Interessenten
-(Risiko 18). Der gesamte Wert dieser beiden Slices bleibt für einen
-Makler unsichtbar, bis ein Lead tatsächlich eine E-Mail bekommt. Der
-bestehende `FollowupDeliveryAdapter` (Slice 5) ist genau für diesen
-Austausch gebaut — ein neuer Adapter implementiert `deliver()` gegen
-einen echten E-Mail-Versender, ohne Scheduling/Abbruch-/Idempotenzlogik
-anzufassen. E-Mail vor WhatsApp/Telefon, weil kein Telefonie-/Messaging-
-Anbieter-Vertrag nötig ist und die meisten Leads bereits eine E-Mail-
-Adresse hinterlegt haben (siehe Lead-Scoring, Abschnitt 6). Für Slice 7
-noch **nichts** vorwegzunehmen: welcher E-Mail-Anbieter/-Service, ob
-Absenderadresse pro Makler oder zentral, DSGVO-/Abmelde-Anforderungen an
-automatisierte E-Mails — das sind Entscheidungen für den Slice-7-Auftrag
-selbst, nicht für dieses Dokument. Alternative, ebenfalls sinnvolle
-Kandidaten: Termin-Erinnerungen/Kalender-Sync (Ausbau der bestehenden
-`appointments`-Tabelle, Phase B) — unabhängig vom Follow-up-Scheduler,
-ähnlich klein, aber geringerer Hebel auf Neukonversion als ein
-funktionierender Follow-up-Kanal.
+**Konkreter nächster Schritt (Slice 8) — zwei sinnvolle Kandidaten,
+Entscheidung bewusst noch nicht getroffen, wie in der Aufgabenstellung
+gefordert:**
+
+**Option A — E-Mail Delivery Hardening:** Provider-Webhooks
+(`delivered`/`bounced`/`complained`, siehe Risiko 20), eine Suppression-
+Liste für dauerhaft bouncende Adressen, echtes Retry/Backoff für
+transiente Fehler (Risiko 22), ein echter One-Click-Unsubscribe-Endpoint
+(Risiko 23). Sinnvoll, sobald echter Versand über einen längeren
+Zeitraum läuft — macht den bereits gebauten Kanal robust, statt ihn
+blind zu erweitern.
+
+**Option B — Inbound E-Mail Replies:** eine echte Antwortadresse mit
+Inbound-Routing (Resend unterstützt das bereits, siehe Abschnitt 7),
+Zuordnung eingehender Antworten zur richtigen Conversation, kanonische
+`sender_type='lead'`-Nachrichten aus echten E-Mail-Antworten, automatisches
+Stoppen offener Follow-ups bei einer echten Antwort — schließt Risiko 21
+und macht den Kanal in beide Richtungen echt, nicht nur ausgehend.
+
+Beide Optionen setzen auf demselben Slice-7-Fundament auf (Adapter-
+Architektur, `EmailProvider`-Interface, Resend-Wahl) und schließen sich
+nicht gegenseitig aus — welche zuerst kommt, hängt davon ab, ob nach
+Aktivierung des Kanals eher Zustellzuverlässigkeit oder echte
+Zwei-Wege-Kommunikation den größeren Makler-Mehrwert bringt. Diese
+Entscheidung wird **erst nach diesem Slice-7-Abschlussbericht** getroffen,
+nicht hier vorweggenommen.
 
 Diese Empfehlung wird hier **nicht automatisch umgesetzt** — das ist die
 nächste, separat zu bestätigende Aufgabe.

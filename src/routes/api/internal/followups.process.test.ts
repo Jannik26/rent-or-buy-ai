@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { isAuthorized, isWorkerEnabled, timingSafeEqualStrings } from "./followups.process";
+import {
+  isAuthorized,
+  isWorkerEnabled,
+  selectFollowupDeliveryAdapter,
+  timingSafeEqualStrings,
+} from "./followups.process";
 
 function requestWithAuth(header: string | null): Request {
   const headers = new Headers();
@@ -78,5 +83,74 @@ describe("isWorkerEnabled", () => {
     expect(isWorkerEnabled("1")).toBe(true);
     expect(isWorkerEnabled("yes")).toBe(true);
     expect(isWorkerEnabled("on")).toBe(true);
+  });
+});
+
+describe("selectFollowupDeliveryAdapter", () => {
+  const validEmailEnv = {
+    emailDeliveryEnabledRaw: "true",
+    apiKey: "re_test_key",
+    senderAddress: "follow-up@mail.estateai.de",
+    replyToAddress: "hello@estateai.de",
+  };
+
+  it("falls back to canonical when EMAIL_DELIVERY_ENABLED is unset, even with full provider config present", () => {
+    const { mode } = selectFollowupDeliveryAdapter({
+      ...validEmailEnv,
+      emailDeliveryEnabledRaw: undefined,
+    });
+    expect(mode).toBe("canonical");
+  });
+
+  it("falls back to canonical when EMAIL_DELIVERY_ENABLED is explicitly false", () => {
+    const { mode } = selectFollowupDeliveryAdapter({
+      ...validEmailEnv,
+      emailDeliveryEnabledRaw: "false",
+    });
+    expect(mode).toBe("canonical");
+  });
+
+  it("falls back to canonical when enabled but the API key is missing (never invents credentials)", () => {
+    const { mode } = selectFollowupDeliveryAdapter({ ...validEmailEnv, apiKey: undefined });
+    expect(mode).toBe("canonical");
+  });
+
+  it("falls back to canonical when enabled but the sender address is missing (no verified domain)", () => {
+    const { mode } = selectFollowupDeliveryAdapter({ ...validEmailEnv, senderAddress: undefined });
+    expect(mode).toBe("canonical");
+  });
+
+  it("falls back to canonical when enabled but the sender address is syntactically invalid", () => {
+    const { mode } = selectFollowupDeliveryAdapter({
+      ...validEmailEnv,
+      senderAddress: "not-an-email",
+    });
+    expect(mode).toBe("canonical");
+  });
+
+  it("selects email only when both explicitly enabled AND fully configured", () => {
+    const { mode, adapter } = selectFollowupDeliveryAdapter(validEmailEnv);
+    expect(mode).toBe("email");
+    expect(adapter).toBeDefined();
+  });
+
+  it("never throws for any combination of missing/invalid inputs", () => {
+    const combos = [
+      {},
+      { emailDeliveryEnabledRaw: "true" },
+      { emailDeliveryEnabledRaw: "true", apiKey: "" },
+      { emailDeliveryEnabledRaw: "garbage", apiKey: "x", senderAddress: "x", replyToAddress: "x" },
+    ];
+    for (const env of combos) {
+      expect(() =>
+        selectFollowupDeliveryAdapter({
+          emailDeliveryEnabledRaw: undefined,
+          apiKey: undefined,
+          senderAddress: undefined,
+          replyToAddress: undefined,
+          ...env,
+        }),
+      ).not.toThrow();
+    }
   });
 });
