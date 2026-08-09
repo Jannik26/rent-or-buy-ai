@@ -166,15 +166,20 @@ export type Database = {
       conversation_followups: {
         Row: {
           after_sequence: number;
+          attempt_count: number;
+          bounce_type: string | null;
           cancelled_at: string | null;
           company_id: string;
           conversation_id: string;
           created_at: string;
           delivery_provider: string | null;
+          delivery_status: string | null;
+          delivery_status_updated_at: string | null;
           error_code: string | null;
           failed_at: string | null;
           id: string;
           message_id: string | null;
+          next_attempt_at: string | null;
           provider_message_id: string | null;
           scheduled_for: string;
           sent_at: string | null;
@@ -186,15 +191,20 @@ export type Database = {
         };
         Insert: {
           after_sequence: number;
+          attempt_count?: number;
+          bounce_type?: string | null;
           cancelled_at?: string | null;
           company_id: string;
           conversation_id: string;
           created_at?: string;
           delivery_provider?: string | null;
+          delivery_status?: string | null;
+          delivery_status_updated_at?: string | null;
           error_code?: string | null;
           failed_at?: string | null;
           id?: string;
           message_id?: string | null;
+          next_attempt_at?: string | null;
           provider_message_id?: string | null;
           scheduled_for: string;
           sent_at?: string | null;
@@ -206,15 +216,20 @@ export type Database = {
         };
         Update: {
           after_sequence?: number;
+          attempt_count?: number;
+          bounce_type?: string | null;
           cancelled_at?: string | null;
           company_id?: string;
           conversation_id?: string;
           created_at?: string;
           delivery_provider?: string | null;
+          delivery_status?: string | null;
+          delivery_status_updated_at?: string | null;
           error_code?: string | null;
           failed_at?: string | null;
           id?: string;
           message_id?: string | null;
+          next_attempt_at?: string | null;
           provider_message_id?: string | null;
           scheduled_for?: string;
           sent_at?: string | null;
@@ -295,6 +310,56 @@ export type Database = {
             referencedColumns: ["id"];
           },
         ];
+      };
+      email_suppressions: {
+        Row: {
+          company_id: string;
+          created_at: string;
+          email: string;
+          id: string;
+          reason: string;
+        };
+        Insert: {
+          company_id: string;
+          created_at?: string;
+          email: string;
+          id?: string;
+          reason: string;
+        };
+        Update: {
+          company_id?: string;
+          created_at?: string;
+          email?: string;
+          id?: string;
+          reason?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "email_suppressions_company_id_fkey";
+            columns: ["company_id"];
+            isOneToOne: false;
+            referencedRelation: "companies";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      email_webhook_events: {
+        Row: {
+          event_type: string;
+          id: string;
+          received_at: string;
+        };
+        Insert: {
+          event_type: string;
+          id: string;
+          received_at?: string;
+        };
+        Update: {
+          event_type?: string;
+          id?: string;
+          received_at?: string;
+        };
+        Relationships: [];
       };
       leads: {
         Row: {

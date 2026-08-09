@@ -60,6 +60,8 @@ import type {
   FollowupDeliveryResult,
 } from "@/lib/followups/followups.functions";
 import {
+  buildListUnsubscribeHeaders,
+  buildUnsubscribeUrl,
   generateSubject,
   renderHtmlBody,
   renderPlainTextBody,
@@ -68,16 +70,23 @@ import {
   type EmailSenderConfig,
 } from "@/lib/email/email-rules";
 import type { EmailProvider } from "@/lib/email/email-provider";
+import { isSuppressed } from "@/lib/email/suppression";
 
 export type CreateEmailDeliveryAdapterArgs = {
   provider: EmailProvider;
   senderConfig: EmailSenderConfig;
+  /** Product Track slice 8A — needed to build a real, working unsubscribe
+   * link in every outbound email (task Phase C10). Both required: no
+   * default/invented value, matching resolveEmailProviderConfig's "all or
+   * nothing" config check in the worker route. */
+  appBaseUrl: string;
+  unsubscribeSecret: string;
 };
 
 export function createEmailDeliveryAdapter(
   args: CreateEmailDeliveryAdapterArgs,
 ): FollowupDeliveryAdapter {
-  const { provider, senderConfig } = args;
+  const { provider, senderConfig, appBaseUrl, unsubscribeSecret } = args;
 
   return {
     async deliver(client: SupabaseClient<Database>, input): Promise<FollowupDeliveryResult> {
@@ -117,22 +126,46 @@ export function createEmailDeliveryAdapter(
         return { delivered: false, outcome: "skipped", skipReason: recipient.reason };
       }
 
+      // ---- Suppression check (task Phase C9) — before EVERY external
+      // send, including retries (task Phase C17: re-checked on each
+      // attempt, not just the first, so a bounce/complaint/unsubscribe
+      // recorded between attempts stops the next one too). ----
+      const suppressed = await isSuppressed(client, {
+        companyId: input.companyId,
+        email: recipient.email,
+      });
+      if (suppressed) {
+        return { delivered: false, outcome: "skipped", skipReason: "recipient_suppressed" };
+      }
+
       const companyName = company?.name ?? "";
       const identity = resolveSenderIdentity(companyName, senderConfig);
+      const unsubscribeUrl = buildUnsubscribeUrl({
+        appBaseUrl,
+        companyId: input.companyId,
+        email: recipient.email,
+        secret: unsubscribeSecret,
+      });
 
       const sendResult = await provider.send({
         to: { email: recipient.email },
         from: identity.from,
         replyTo: identity.replyTo,
         subject: generateSubject(input.step, companyName),
-        text: renderPlainTextBody(input.step, companyName),
-        html: renderHtmlBody(input.step, companyName),
+        text: renderPlainTextBody(input.step, companyName, unsubscribeUrl),
+        html: renderHtmlBody(input.step, companyName, unsubscribeUrl),
+        headers: buildListUnsubscribeHeaders(unsubscribeUrl),
         // The delivery idempotency key — see the module doc comment above.
         idempotencyKey: input.followupId,
       });
 
       if (sendResult.outcome === "rejected") {
-        return { delivered: false, outcome: "failed", errorCode: sendResult.errorCode };
+        return {
+          delivered: false,
+          outcome: "failed",
+          errorCode: sendResult.errorCode,
+          retryable: sendResult.retryable,
+        };
       }
 
       // Canonical message write happens AFTER a confirmed provider accept

@@ -92,6 +92,8 @@ describe("selectFollowupDeliveryAdapter", () => {
     apiKey: "re_test_key",
     senderAddress: "follow-up@mail.estateai.de",
     replyToAddress: "hello@estateai.de",
+    appBaseUrl: "https://rent-or-buy-ai.vercel.app",
+    unsubscribeSecret: "test-unsubscribe-secret",
   };
 
   it("falls back to canonical when EMAIL_DELIVERY_ENABLED is unset, even with full provider config present", () => {
@@ -148,6 +150,8 @@ describe("selectFollowupDeliveryAdapter", () => {
           apiKey: undefined,
           senderAddress: undefined,
           replyToAddress: undefined,
+          appBaseUrl: undefined,
+          unsubscribeSecret: undefined,
           ...env,
         }),
       ).not.toThrow();

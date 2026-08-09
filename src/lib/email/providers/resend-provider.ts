@@ -40,6 +40,9 @@ function buildRequestBody(message: EmailMessage): Record<string, unknown> {
     subject: message.subject,
     text: message.text,
     ...(message.html ? { html: message.html } : {}),
+    ...(message.headers && Object.keys(message.headers).length > 0
+      ? { headers: message.headers }
+      : {}),
   };
 }
 

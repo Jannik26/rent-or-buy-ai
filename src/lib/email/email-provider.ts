@@ -34,6 +34,11 @@ export type EmailMessage = {
   text: string;
   html?: string;
   idempotencyKey: string;
+  /** Extra provider-agnostic email headers — currently only used for
+   * List-Unsubscribe/List-Unsubscribe-Post (Product Track slice 8A, RFC
+   * 8058 one-click unsubscribe), never for anything security-relevant
+   * (never Authorization, never anything provider-secret-derived). */
+  headers?: Record<string, string>;
 };
 
 /**

@@ -48,6 +48,8 @@ const QA_COMPANY_ID = "e2a7b36e-d374-4895-99ce-f5b2f21eb993";
 const TEST_SECRET = "test-only-cron-secret-slice-7";
 const TEST_SENDER_ADDRESS = "follow-up@mail.estateai.de.test";
 const TEST_API_KEY = "re_test_only_key_never_real";
+const TEST_APP_BASE_URL = "https://rent-or-buy-ai.vercel.app";
+const TEST_UNSUBSCRIBE_SECRET = "test-only-unsubscribe-secret-slice-8a";
 
 // Own fixture-id range — f0130001-... — deliberately disjoint from slice
 // 5/6's f0110001-.../f0120001-... ranges.
@@ -63,6 +65,11 @@ const FIXTURE = {
   leadWorkerRetryCrashRecovery: "f0130001-0000-0000-0000-000000000009",
   leadConcurrent: "f0130001-0000-0000-0000-000000000010",
   leadDeliveryDisabled: "f0130001-0000-0000-0000-000000000011",
+  leadTransientRetrySucceeds: "f0130001-0000-0000-0000-000000000012",
+  leadPermanentNoRetry: "f0130001-0000-0000-0000-000000000013",
+  leadSuppressedRecipient: "f0130001-0000-0000-0000-000000000014",
+  leadMaxAttemptsExhausted: "f0130001-0000-0000-0000-000000000015",
+  leadRetryThenClosed: "f0130001-0000-0000-0000-000000000016",
 } as const;
 
 function authorizedRequest(): Request {
@@ -126,9 +133,12 @@ const RESEND_URL = "https://api.resend.com/emails";
  * (Supabase) is passed through to the real fetch untouched — see the file
  * header comment for why that matters. `calls` (Resend-only) is what every
  * test asserts call counts against, never the raw mock's total call count. */
-function createFakeResendFetch(opts: { failAll?: boolean } = {}) {
+function createFakeResendFetch(
+  opts: { failAll?: boolean; failStatusCode?: number; failFirstNThenSucceed?: number } = {},
+) {
   const deliveredKeys = new Map<string, string>(); // idempotencyKey -> providerMessageId
   let nextId = 1;
+  let callCount = 0;
   const calls: { idempotencyKey: string | null; body: unknown }[] = [];
 
   const fetchMock = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
@@ -141,15 +151,24 @@ function createFakeResendFetch(opts: { failAll?: boolean } = {}) {
     const idempotencyKey = headers?.["Idempotency-Key"] ?? null;
     const body = init?.body ? JSON.parse(init.body as string) : null;
     calls.push({ idempotencyKey, body });
+    callCount += 1;
 
-    if (opts.failAll) {
-      return new Response(
-        JSON.stringify({ name: "validation_error", message: "simulated rejection" }),
-        {
-          status: 422,
-          headers: { "content-type": "application/json" },
-        },
-      );
+    const shouldFailThisCall =
+      opts.failAll ||
+      (opts.failFirstNThenSucceed !== undefined && callCount <= opts.failFirstNThenSucceed);
+
+    if (shouldFailThisCall) {
+      const status = opts.failStatusCode ?? 422;
+      const name =
+        status === 429
+          ? "rate_limit_exceeded"
+          : status >= 500
+            ? "application_error"
+            : "validation_error";
+      return new Response(JSON.stringify({ name, message: "simulated rejection" }), {
+        status,
+        headers: { "content-type": "application/json" },
+      });
     }
 
     if (idempotencyKey && deliveredKeys.has(idempotencyKey)) {
@@ -185,6 +204,8 @@ describe.skipIf(!hasCredentials)("E-Mail delivery channel (real DB, mocked provi
     process.env.EMAIL_PROVIDER_API_KEY = TEST_API_KEY;
     process.env.EMAIL_SENDER_ADDRESS = TEST_SENDER_ADDRESS;
     process.env.EMAIL_REPLY_TO = TEST_SENDER_ADDRESS;
+    process.env.APP_BASE_URL = TEST_APP_BASE_URL;
+    process.env.EMAIL_UNSUBSCRIBE_SECRET = TEST_UNSUBSCRIBE_SECRET;
   });
 
   afterEach(() => {
@@ -197,6 +218,8 @@ describe.skipIf(!hasCredentials)("E-Mail delivery channel (real DB, mocked provi
     delete process.env.EMAIL_PROVIDER_API_KEY;
     delete process.env.EMAIL_SENDER_ADDRESS;
     delete process.env.EMAIL_REPLY_TO;
+    delete process.env.APP_BASE_URL;
+    delete process.env.EMAIL_UNSUBSCRIBE_SECRET;
     for (const leadId of seededLeadIds) {
       const { data: conv } = await admin
         .from("conversations")
@@ -496,6 +519,8 @@ describe.skipIf(!hasCredentials)("E-Mail delivery channel (real DB, mocked provi
     const adapter = createEmailDeliveryAdapter({
       provider: createResendEmailProvider(TEST_API_KEY),
       senderConfig: { fromAddress: TEST_SENDER_ADDRESS, replyToAddress: TEST_SENDER_ADDRESS },
+      appBaseUrl: TEST_APP_BASE_URL,
+      unsubscribeSecret: TEST_UNSUBSCRIBE_SECRET,
     });
     const deliveryResult = await adapter.deliver(admin, {
       followupId,
@@ -587,5 +612,266 @@ describe.skipIf(!hasCredentials)("E-Mail delivery channel (real DB, mocked provi
       .single();
     expect(followupAfter!.status).toBe("sent");
     expect(followupAfter!.delivery_provider).toBe("canonical");
+  }, 20_000);
+
+  // ---- Slice 8A: retry/backoff, suppression ----
+  //
+  // Suppression and the lead-reply/closed-conversation re-checks are
+  // deliberately NOT duplicated per-scenario here beyond one proof each —
+  // a retry re-claim goes through the exact same due-row claim →
+  // shouldSendFollowup → adapter.deliver() pipeline as a first attempt
+  // (see followups.functions.ts), so the existing scenario 4/5/6 coverage
+  // above already proves those checks work; what's new and worth its own
+  // test is specifically that they're re-evaluated on a *retried* claim,
+  // not just the first one (scenario 8a-retry-then-closed below).
+
+  it("scenario 8A-a: a transient provider failure schedules a bounded retry (not an immediate failed), and the eventual retry reuses the same idempotency key", async () => {
+    const { fetchMock, calls } = createFakeResendFetch({
+      failFirstNThenSucceed: 1,
+      failStatusCode: 429,
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { conversationId, followupId } = await seedDueFollowup(
+      admin,
+      FIXTURE.leadTransientRetrySucceeds,
+      "Email Transient Retry Fixture",
+      "lead-transient-retry@example.com",
+    );
+
+    const res1 = await handleFollowupWorkerRequest(authorizedRequest());
+    const body1 = (await res1.json()) as { retried: number; failed: number; sent: number };
+    expect(body1.retried).toBe(1);
+    expect(body1.failed).toBe(0);
+    expect(body1.sent).toBe(0);
+    expect(calls).toHaveLength(1);
+
+    const { data: afterFirstAttempt } = await admin
+      .from("conversation_followups")
+      .select("status, attempt_count, next_attempt_at, error_code")
+      .eq("id", followupId)
+      .single();
+    expect(afterFirstAttempt!.status).toBe("scheduled");
+    expect(afterFirstAttempt!.attempt_count).toBe(1);
+    expect(afterFirstAttempt!.next_attempt_at).not.toBeNull();
+    expect(afterFirstAttempt!.error_code).toContain("transient");
+
+    // Not due yet — the retry backoff hasn't elapsed (real time, no fake
+    // timers): a normal worker tick right now must not re-claim it.
+    const resTooSoon = await handleFollowupWorkerRequest(authorizedRequest());
+    const bodyTooSoon = (await resTooSoon.json()) as { claimed: number };
+    expect(bodyTooSoon.claimed).toBe(0);
+    expect(calls).toHaveLength(1);
+
+    // Simulate the backoff having elapsed (test-only time shortcut — no
+    // production data involved, this is purely this fixture's own row).
+    await admin
+      .from("conversation_followups")
+      .update({ next_attempt_at: new Date(Date.now() - 1000).toISOString() })
+      .eq("id", followupId);
+
+    const res2 = await handleFollowupWorkerRequest(authorizedRequest());
+    const body2 = (await res2.json()) as { sent: number };
+    expect(body2.sent).toBe(1);
+    expect(calls).toHaveLength(2);
+    // Same idempotency key on both the failed attempt and the successful
+    // retry — task Phase C16, the whole point of reusing the followup's
+    // own id as the key.
+    expect(calls[0].idempotencyKey).toBe(followupId);
+    expect(calls[1].idempotencyKey).toBe(followupId);
+
+    const { data: finalRow } = await admin
+      .from("conversation_followups")
+      .select("status, attempt_count")
+      .eq("id", followupId)
+      .single();
+    expect(finalRow!.status).toBe("sent");
+    expect(finalRow!.attempt_count).toBe(1); // only incremented on failure, not on the eventual success
+
+    const { count: messageCount } = await admin
+      .from("messages")
+      .select("id", { count: "exact", head: true })
+      .eq("conversation_id", conversationId);
+    expect(messageCount).toBe(3); // exactly one follow-up message, never two
+  }, 20_000);
+
+  it("scenario 8A-b: a permanent provider rejection is never retried", async () => {
+    const { fetchMock, calls } = createFakeResendFetch({ failAll: true, failStatusCode: 422 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { followupId } = await seedDueFollowup(
+      admin,
+      FIXTURE.leadPermanentNoRetry,
+      "Email Permanent No-Retry Fixture",
+      "lead-permanent-failure@example.com",
+    );
+
+    const res = await handleFollowupWorkerRequest(authorizedRequest());
+    const body = (await res.json()) as { failed: number; retried: number };
+    expect(body.failed).toBe(1);
+    expect(body.retried).toBe(0);
+    expect(calls).toHaveLength(1);
+
+    const { data: followupAfter } = await admin
+      .from("conversation_followups")
+      .select("status, attempt_count, next_attempt_at, error_code")
+      .eq("id", followupId)
+      .single();
+    expect(followupAfter!.status).toBe("failed");
+    expect(followupAfter!.attempt_count).toBe(1);
+    expect(followupAfter!.next_attempt_at).toBeNull();
+    expect(followupAfter!.error_code).not.toContain("retry_exhausted");
+
+    // A permanently-failed row is never re-claimed by a later tick.
+    const res2 = await handleFollowupWorkerRequest(authorizedRequest());
+    const body2 = (await res2.json()) as { claimed: number };
+    expect(body2.claimed).toBe(0);
+    expect(calls).toHaveLength(1);
+  }, 20_000);
+
+  it("scenario 8A-c: repeated transient failures exhaust the bounded retry budget and land in failed with a machine-readable code", async () => {
+    const { fetchMock, calls } = createFakeResendFetch({ failAll: true, failStatusCode: 500 });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { followupId } = await seedDueFollowup(
+      admin,
+      FIXTURE.leadMaxAttemptsExhausted,
+      "Email Max Attempts Fixture",
+      "lead-exhausted@example.com",
+    );
+
+    // Attempt 1 -> retry scheduled.
+    await handleFollowupWorkerRequest(authorizedRequest());
+    let row = (
+      await admin
+        .from("conversation_followups")
+        .select("status, attempt_count, next_attempt_at")
+        .eq("id", followupId)
+        .single()
+    ).data!;
+    expect(row.status).toBe("scheduled");
+    expect(row.attempt_count).toBe(1);
+
+    // Force the backoff to have elapsed, attempt 2 -> retry scheduled again.
+    await admin
+      .from("conversation_followups")
+      .update({ next_attempt_at: new Date(Date.now() - 1000).toISOString() })
+      .eq("id", followupId);
+    await handleFollowupWorkerRequest(authorizedRequest());
+    row = (
+      await admin
+        .from("conversation_followups")
+        .select("status, attempt_count, next_attempt_at")
+        .eq("id", followupId)
+        .single()
+    ).data!;
+    expect(row.status).toBe("scheduled");
+    expect(row.attempt_count).toBe(2);
+
+    // Force the backoff to have elapsed once more, attempt 3 -> exhausted -> failed.
+    await admin
+      .from("conversation_followups")
+      .update({ next_attempt_at: new Date(Date.now() - 1000).toISOString() })
+      .eq("id", followupId);
+    await handleFollowupWorkerRequest(authorizedRequest());
+
+    const finalRow = (
+      await admin
+        .from("conversation_followups")
+        .select("status, attempt_count, error_code")
+        .eq("id", followupId)
+        .single()
+    ).data!;
+    expect(finalRow.status).toBe("failed");
+    expect(finalRow.attempt_count).toBe(3);
+    expect(finalRow.error_code).toContain("retry_exhausted");
+    expect(calls).toHaveLength(3); // exactly 3 real provider attempts, never more
+  }, 30_000);
+
+  it("scenario 8A-d: a suppressed recipient is skipped before any provider call — checked on every send, not just the first", async () => {
+    const { fetchMock, calls } = createFakeResendFetch();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const email = "already-suppressed@example.com";
+    await admin
+      .from("email_suppressions")
+      .upsert(
+        { company_id: QA_COMPANY_ID, email, reason: "bounce" },
+        { onConflict: "company_id,email" },
+      );
+
+    try {
+      const { followupId } = await seedDueFollowup(
+        admin,
+        FIXTURE.leadSuppressedRecipient,
+        "Email Suppressed Recipient Fixture",
+        email,
+      );
+
+      const res = await handleFollowupWorkerRequest(authorizedRequest());
+      const body = (await res.json()) as { skipped: number };
+      expect(body.skipped).toBe(1);
+      expect(calls).toHaveLength(0);
+
+      const { data: followupAfter } = await admin
+        .from("conversation_followups")
+        .select("status, skip_reason")
+        .eq("id", followupId)
+        .single();
+      expect(followupAfter!.status).toBe("skipped");
+      expect(followupAfter!.skip_reason).toBe("recipient_suppressed");
+    } finally {
+      await admin
+        .from("email_suppressions")
+        .delete()
+        .eq("company_id", QA_COMPANY_ID)
+        .eq("email", email);
+    }
+  }, 20_000);
+
+  it("scenario 8A-e: a conversation closed between a scheduled retry cancels it instead of sending — the retry re-check is real, not just the first attempt's", async () => {
+    const { fetchMock, calls } = createFakeResendFetch({
+      failFirstNThenSucceed: 1,
+      failStatusCode: 429,
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { conversationId, followupId } = await seedDueFollowup(
+      admin,
+      FIXTURE.leadRetryThenClosed,
+      "Email Retry-Then-Closed Fixture",
+      "lead-retry-then-closed@example.com",
+    );
+
+    // First attempt fails transient -> retry scheduled.
+    await handleFollowupWorkerRequest(authorizedRequest());
+    const afterFirst = (
+      await admin.from("conversation_followups").select("status").eq("id", followupId).single()
+    ).data!;
+    expect(afterFirst.status).toBe("scheduled");
+    expect(calls).toHaveLength(1);
+
+    // Between attempts, the conversation gets closed.
+    await admin.from("conversations").update({ status: "closed" }).eq("id", conversationId);
+    await admin
+      .from("conversation_followups")
+      .update({ next_attempt_at: new Date(Date.now() - 1000).toISOString() })
+      .eq("id", followupId);
+
+    const res = await handleFollowupWorkerRequest(authorizedRequest());
+    const body = (await res.json()) as { cancelled: number; sent: number };
+    expect(body.cancelled).toBe(1);
+    expect(body.sent).toBe(0);
+    // The retry re-check caught the closed conversation BEFORE calling the
+    // provider again — no second external attempt.
+    expect(calls).toHaveLength(1);
+
+    const { data: finalRow } = await admin
+      .from("conversation_followups")
+      .select("status, skip_reason")
+      .eq("id", followupId)
+      .single();
+    expect(finalRow!.status).toBe("cancelled");
+    expect(finalRow!.skip_reason).toBe("conversation_closed");
   }, 20_000);
 });

@@ -85,12 +85,16 @@ export function selectFollowupDeliveryAdapter(env: {
   apiKey: string | undefined;
   senderAddress: string | undefined;
   replyToAddress: string | undefined;
+  appBaseUrl: string | undefined;
+  unsubscribeSecret: string | undefined;
 }): { adapter: FollowupDeliveryAdapter; mode: "email" | "canonical" } {
   if (isEmailDeliveryEnabled(env.emailDeliveryEnabledRaw)) {
     const providerConfig = resolveEmailProviderConfig({
       apiKey: env.apiKey,
       senderAddress: env.senderAddress,
       replyToAddress: env.replyToAddress,
+      appBaseUrl: env.appBaseUrl,
+      unsubscribeSecret: env.unsubscribeSecret,
     });
     if (providerConfig) {
       const provider = createResendEmailProvider(providerConfig.apiKey);
@@ -100,6 +104,8 @@ export function selectFollowupDeliveryAdapter(env: {
           fromAddress: providerConfig.senderAddress,
           replyToAddress: providerConfig.replyToAddress,
         },
+        appBaseUrl: providerConfig.appBaseUrl,
+        unsubscribeSecret: providerConfig.unsubscribeSecret,
       });
       return { adapter, mode: "email" };
     }
@@ -171,6 +177,8 @@ export async function handleFollowupWorkerRequest(request: Request): Promise<Res
     apiKey: process.env.EMAIL_PROVIDER_API_KEY,
     senderAddress: process.env.EMAIL_SENDER_ADDRESS,
     replyToAddress: process.env.EMAIL_REPLY_TO,
+    appBaseUrl: process.env.APP_BASE_URL,
+    unsubscribeSecret: process.env.EMAIL_UNSUBSCRIBE_SECRET,
   });
 
   try {
@@ -194,7 +202,7 @@ export async function handleFollowupWorkerRequest(request: Request): Promise<Res
     await supabaseAdmin.from("system_events").insert({
       kind: "success",
       source: "followups.worker",
-      message: `run ${runId}: mode=${deliveryMode} claimed ${result.claimed}, sent ${result.sent}, cancelled ${result.cancelled}, skipped ${result.skipped}, failed ${result.failed}, recovered ${recovery.recovered}`,
+      message: `run ${runId}: mode=${deliveryMode} claimed ${result.claimed}, sent ${result.sent}, cancelled ${result.cancelled}, skipped ${result.skipped}, retried ${result.retried}, failed ${result.failed}, recovered ${recovery.recovered}`,
       context: {
         runId,
         durationMs,

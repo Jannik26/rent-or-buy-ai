@@ -27,6 +27,7 @@ import {
   DEFAULT_STALE_PROCESSING_MINUTES,
   FOLLOWUP_STEPS,
   computeScheduledFor,
+  decideRetry,
   getFollowupTemplate,
   isStaleProcessing,
   shouldScheduleSequence,
@@ -292,7 +293,7 @@ export type FollowupDeliveryInput = {
 export type FollowupDeliveryResult =
   | { delivered: true; messageId: string | null; provider?: string; providerMessageId?: string }
   | { delivered: false; outcome: "skipped"; skipReason: string }
-  | { delivered: false; outcome: "failed"; errorCode: string };
+  | { delivered: false; outcome: "failed"; errorCode: string; retryable?: boolean };
 
 export interface FollowupDeliveryAdapter {
   deliver(
@@ -344,6 +345,11 @@ export type ProcessDueFollowupsResult = {
    * valid delivery target (e.g. no lead email on file). Always 0 when using
    * canonicalMessageDeliveryAdapter, which never produces this outcome. */
   skipped: number;
+  /** New in Product Track slice 8A — a transient delivery failure was
+   * rescheduled for a bounded retry rather than immediately marked
+   * `failed` (see decideRetry in followup-rules.ts). Always 0 for an
+   * adapter that never sets `retryable` on a failure. */
+  retried: number;
 };
 
 /**
@@ -448,11 +454,15 @@ export async function processDueFollowups(
   const adapter = args.adapter ?? canonicalMessageDeliveryAdapter;
   const batchSize = args.batchSize ?? DEFAULT_FOLLOWUP_WORKER_BATCH_SIZE;
 
+  // Due = scheduled_for <= now, UNLESS a retry is pending (next_attempt_at
+  // set — slice 8A), in which case that gates the row instead. A row with
+  // no retry pending (next_attempt_at is null) behaves exactly as before.
+  const nowIso = now.toISOString();
   const { data: candidates, error: candidatesError } = await client
     .from("conversation_followups")
     .select("id")
     .eq("status", "scheduled")
-    .lte("scheduled_for", now.toISOString())
+    .or(`and(next_attempt_at.is.null,scheduled_for.lte.${nowIso}),next_attempt_at.lte.${nowIso}`)
     .order("scheduled_for", { ascending: true })
     .limit(batchSize);
   if (candidatesError) throw new Error(candidatesError.message);
@@ -463,6 +473,7 @@ export async function processDueFollowups(
     cancelled: 0,
     failed: 0,
     skipped: 0,
+    retried: 0,
   };
   if (!candidates || candidates.length === 0) return result;
 
@@ -474,7 +485,7 @@ export async function processDueFollowups(
       "id",
       candidates.map((c) => c.id),
     )
-    .select("id, conversation_id, company_id, step, after_sequence");
+    .select("id, conversation_id, company_id, step, after_sequence, attempt_count");
   if (claimError) throw new Error(claimError.message);
 
   result.claimed = claimed?.length ?? 0;
@@ -532,6 +543,14 @@ export async function processDueFollowups(
             message_id: delivery.messageId,
             delivery_provider: delivery.provider ?? null,
             provider_message_id: delivery.providerMessageId ?? null,
+            // "accepted" = the provider took responsibility for the
+            // message — not proof of inbox delivery. Webhooks (slice 8A)
+            // may later move this to delivered/bounced/complained/
+            // deferred. Only set when there's an actual external
+            // provider_message_id to correlate a later webhook against;
+            // the canonical-only adapter never gets a delivery_status.
+            delivery_status: delivery.providerMessageId ? "accepted" : null,
+            delivery_status_updated_at: delivery.providerMessageId ? now.toISOString() : null,
           })
           .eq("id", row.id);
         if (sentError) throw new Error(sentError.message);
@@ -548,16 +567,42 @@ export async function processDueFollowups(
         if (skipError) throw new Error(skipError.message);
         result.skipped += 1;
       } else {
-        const { error: failError } = await client
-          .from("conversation_followups")
-          .update({
-            status: "failed",
-            failed_at: now.toISOString(),
-            error_code: delivery.errorCode,
-          })
-          .eq("id", row.id);
-        if (failError) throw new Error(failError.message);
-        result.failed += 1;
+        // delivery.outcome === "failed" — retry only if the adapter
+        // explicitly marked this attempt retryable (task Phase C13: never
+        // retry a permanent rejection/suppression/invalid-recipient).
+        const attemptCountAfterFailure = row.attempt_count + 1;
+        const retryDecision = delivery.retryable
+          ? decideRetry({ attemptCountAfterFailure, now })
+          : { outcome: "exhausted" as const };
+
+        if (retryDecision.outcome === "retry") {
+          const { error: retryError } = await client
+            .from("conversation_followups")
+            .update({
+              status: "scheduled",
+              attempt_count: attemptCountAfterFailure,
+              next_attempt_at: retryDecision.nextAttemptAt.toISOString(),
+              error_code: delivery.errorCode,
+            })
+            .eq("id", row.id);
+          if (retryError) throw new Error(retryError.message);
+          result.retried += 1;
+        } else {
+          const errorCode = delivery.retryable
+            ? `retry_exhausted:${delivery.errorCode}`.slice(0, 200)
+            : delivery.errorCode;
+          const { error: failError } = await client
+            .from("conversation_followups")
+            .update({
+              status: "failed",
+              failed_at: now.toISOString(),
+              attempt_count: attemptCountAfterFailure,
+              error_code: errorCode,
+            })
+            .eq("id", row.id);
+          if (failError) throw new Error(failError.message);
+          result.failed += 1;
+        }
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

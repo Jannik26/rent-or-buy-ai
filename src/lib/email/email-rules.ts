@@ -6,6 +6,7 @@
 
 import { z } from "zod";
 import { getFollowupTemplate, type FollowupStep } from "@/lib/followups/followup-rules";
+import { signUnsubscribeToken } from "@/lib/email/unsubscribe-token";
 
 // ============================================================================
 // Recipient resolution (task Phase 7) — the recipient must come from the
@@ -125,16 +126,24 @@ function transparencyNote(companyName: string): string {
   return `Diese Nachricht wurde automatisiert von EstateAI im Auftrag von ${companyName} gesendet.`;
 }
 
-/** Honest, not a real unsubscribe mechanism (task Phase 12 — a full
- * one-click-unsubscribe needs its own public token/endpoint architecture,
- * explicitly deferred to a later slice, see ROADMAP.md). A reply DOES reach
- * a real, human-monitored inbox (the configured Reply-To) even though nothing
- * automatically processes it into the conversation yet — so this sentence is
- * accurate, not misleading. */
+/** A reply reaches a real, human-monitored inbox (the configured
+ * Reply-To) even though nothing automatically processes it into the
+ * conversation yet — accurate, not misleading. Distinct from the real
+ * unsubscribe link below (task Phase C10, slice 8A) — replying talks to a
+ * human; the link stops automated follow-ups specifically and
+ * immediately, no human needed. */
 const REPLY_HINT =
-  "Falls Sie keine weiteren automatischen Nachrichten erhalten möchten, antworten Sie einfach auf diese E-Mail.";
+  "Für Rückfragen antworten Sie einfach auf diese E-Mail — wir melden uns persönlich.";
 
-export function renderPlainTextBody(step: FollowupStep, companyName: string): string {
+function unsubscribeLine(unsubscribeUrl: string): string {
+  return `Automatische Follow-up-E-Mails beenden: ${unsubscribeUrl}`;
+}
+
+export function renderPlainTextBody(
+  step: FollowupStep,
+  companyName: string,
+  unsubscribeUrl: string,
+): string {
   const name = safeCompanyName(companyName);
   return [
     getFollowupTemplate(step),
@@ -145,6 +154,7 @@ export function renderPlainTextBody(step: FollowupStep, companyName: string): st
     "---",
     transparencyNote(name),
     REPLY_HINT,
+    unsubscribeLine(unsubscribeUrl),
   ].join("\n");
 }
 
@@ -157,12 +167,17 @@ function escapeHtml(raw: string): string {
     .replace(/'/g, "&#39;");
 }
 
-export function renderHtmlBody(step: FollowupStep, companyName: string): string {
+export function renderHtmlBody(
+  step: FollowupStep,
+  companyName: string,
+  unsubscribeUrl: string,
+): string {
   const name = safeCompanyName(companyName);
   const body = escapeHtml(getFollowupTemplate(step));
   const companyHtml = escapeHtml(name);
   const transparencyHtml = escapeHtml(transparencyNote(name));
   const replyHintHtml = escapeHtml(REPLY_HINT);
+  const unsubscribeHtml = escapeHtml(unsubscribeUrl);
   return `<!doctype html>
 <html lang="de">
   <body style="margin:0;padding:0;background-color:#f5f5f5;">
@@ -177,7 +192,8 @@ export function renderHtmlBody(step: FollowupStep, companyName: string): string 
                 <p style="margin:0 0 24px;font-weight:600;">${companyHtml}</p>
                 <hr style="border:none;border-top:1px solid #e5e5e5;margin:24px 0;" />
                 <p style="margin:0 0 8px;font-size:12px;color:#6b7280;">${transparencyHtml}</p>
-                <p style="margin:0;font-size:12px;color:#6b7280;">${replyHintHtml}</p>
+                <p style="margin:0 0 8px;font-size:12px;color:#6b7280;">${replyHintHtml}</p>
+                <p style="margin:0;font-size:12px;color:#6b7280;">Automatische Follow-up-E-Mails beenden: <a href="${unsubscribeHtml}" style="color:#6b7280;">${unsubscribeHtml}</a></p>
               </td>
             </tr>
           </table>
@@ -186,6 +202,36 @@ export function renderHtmlBody(step: FollowupStep, companyName: string): string 
     </table>
   </body>
 </html>`;
+}
+
+/** RFC 8058 one-click unsubscribe headers — the plain URL (angle-bracket
+ * wrapped, per the List-Unsubscribe header's own RFC 2369 syntax) plus the
+ * `List-Unsubscribe-Post` marker that tells a supporting mail client it can
+ * POST to that same URL without opening the email. Same underlying
+ * endpoint the visible footer link points to — see
+ * src/routes/api/public/email.unsubscribe.ts, which treats a POST there as
+ * pre-authorized (the mail client's own UI already got explicit user
+ * consent) and a GET as "show a confirmation page first". */
+export function buildListUnsubscribeHeaders(unsubscribeUrl: string): Record<string, string> {
+  return {
+    "List-Unsubscribe": `<${unsubscribeUrl}>`,
+    "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+  };
+}
+
+/** Builds the absolute, publicly-reachable unsubscribe URL for one
+ * recipient — signs a fresh token from (companyId, email) each time
+ * (cheap, deterministic, no lookup needed) rather than reading a
+ * previously-stored one. `appBaseUrl` has no trailing slash (see
+ * resolveEmailProviderConfig, which strips it). */
+export function buildUnsubscribeUrl(args: {
+  appBaseUrl: string;
+  companyId: string;
+  email: string;
+  secret: string;
+}): string {
+  const token = signUnsubscribeToken({ companyId: args.companyId, email: args.email }, args.secret);
+  return `${args.appBaseUrl}/api/public/email/unsubscribe?token=${encodeURIComponent(token)}`;
 }
 
 // ============================================================================
@@ -211,6 +257,8 @@ export type EmailProviderConfig = {
   apiKey: string;
   senderAddress: string;
   replyToAddress: string;
+  appBaseUrl: string;
+  unsubscribeSecret: string;
 };
 
 /** Returns null (not configured) unless every required piece is present and
@@ -218,19 +266,36 @@ export type EmailProviderConfig = {
  * route treats null as "fall back to the existing canonicalMessageDeliveryAdapter",
  * never as an error (task Phase 3: no invented credentials, no pretending a
  * verified domain exists when it doesn't). `replyToAddress` falls back to
- * `senderAddress` if not separately configured. */
+ * `senderAddress` if not separately configured.
+ *
+ * `appBaseUrl`/`unsubscribeSecret` (added slice 8A) are required too, not
+ * optional-with-a-fallback: an unsubscribe link is not optional
+ * functionality once real email sending is on (task Phase C10) — a
+ * deployment that hasn't set these yet stays on the safe canonical
+ * fallback exactly like one missing the provider key, rather than ever
+ * sending a real email with no way to opt out. */
 export function resolveEmailProviderConfig(env: {
   apiKey: string | undefined;
   senderAddress: string | undefined;
   replyToAddress: string | undefined;
+  appBaseUrl: string | undefined;
+  unsubscribeSecret: string | undefined;
 }): EmailProviderConfig | null {
   const apiKey = env.apiKey?.trim();
   const senderAddressRaw = env.senderAddress?.trim();
-  if (!apiKey || !senderAddressRaw) return null;
+  const appBaseUrl = env.appBaseUrl?.trim();
+  const unsubscribeSecret = env.unsubscribeSecret?.trim();
+  if (!apiKey || !senderAddressRaw || !appBaseUrl || !unsubscribeSecret) return null;
   const senderCheck = emailSchema.safeParse(senderAddressRaw);
   if (!senderCheck.success) return null;
   const replyToRaw = env.replyToAddress?.trim();
   const replyToCheck = replyToRaw ? emailSchema.safeParse(replyToRaw) : undefined;
   const replyToAddress = replyToCheck?.success ? replyToCheck.data : senderCheck.data;
-  return { apiKey, senderAddress: senderCheck.data, replyToAddress };
+  return {
+    apiKey,
+    senderAddress: senderCheck.data,
+    replyToAddress,
+    appBaseUrl: appBaseUrl.replace(/\/+$/, ""),
+    unsubscribeSecret,
+  };
 }

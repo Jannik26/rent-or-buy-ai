@@ -163,3 +163,52 @@ export function parsePositiveIntEnv(raw: string | undefined, fallback: number): 
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
   return parsed;
 }
+
+// ============================================================================
+// Delivery retry/backoff (Product Track slice 8A, see ROADMAP.md) — deliberately
+// channel-agnostic (conversation_followups.attempt_count/next_attempt_at are
+// generic columns, not email-specific), even though slice 8A is the first
+// adapter to actually set `retryable` on a failure. A conservative, bounded
+// schedule for TRANSIENT delivery failures only — a permanent failure
+// (invalid recipient, suppressed, complaint) never reaches this at all, see
+// FollowupDeliveryResult's `retryable` flag and the worker's handling of it.
+// ============================================================================
+
+/** Total attempts allowed for one followup row, including the first —
+ * matches this codebase's existing "small, bounded, no infinite retries"
+ * convention (MAX_FOLLOWUP_STEPS above uses the same conservative
+ * instinct). 3 attempts = 1 initial + up to 2 retries. */
+export const MAX_DELIVERY_ATTEMPTS = 3;
+
+/** Base backoff in minutes, indexed by "how many attempts have happened so
+ * far" (1-based) — i.e. after attempt 1 fails, wait BACKOFF_MINUTES[1]
+ * before attempt 2. A conservative "few minutes, then longer" curve (task
+ * Phase C15), not exponential — this repo's worker only ticks every 5
+ * minutes, so anything sub-5-minutes is meaningless precision anyway. */
+const BACKOFF_MINUTES_BY_ATTEMPT: Record<number, number> = {
+  1: 5,
+  2: 20,
+};
+
+export type RetryDecision = { outcome: "retry"; nextAttemptAt: Date } | { outcome: "exhausted" };
+
+/** Pure — `now` and `random` (defaulting to `Math.random`) are both
+ * injectable for deterministic tests, matching this file's existing
+ * "no hidden Date.now()/global state" discipline. `random` only ever
+ * widens the delay (0-20% jitter added on top of the base, task Phase
+ * C15's "Jitter nutzen, wenn sinnvoll") — it can never shorten it below
+ * the base backoff. */
+export function decideRetry(args: {
+  attemptCountAfterFailure: number;
+  now: Date;
+  random?: () => number;
+}): RetryDecision {
+  if (args.attemptCountAfterFailure >= MAX_DELIVERY_ATTEMPTS) {
+    return { outcome: "exhausted" };
+  }
+  const baseMinutes = BACKOFF_MINUTES_BY_ATTEMPT[args.attemptCountAfterFailure] ?? 20;
+  const random = args.random ?? Math.random;
+  const jitterMinutes = baseMinutes * 0.2 * random();
+  const delayMs = (baseMinutes + jitterMinutes) * 60_000;
+  return { outcome: "retry", nextAttemptAt: new Date(args.now.getTime() + delayMs) };
+}

@@ -4,8 +4,10 @@ import {
   DEFAULT_STALE_PROCESSING_MINUTES,
   FOLLOWUP_STEP_OFFSET_HOURS,
   FOLLOWUP_STEPS,
+  MAX_DELIVERY_ATTEMPTS,
   MAX_FOLLOWUP_STEPS,
   computeScheduledFor,
+  decideRetry,
   getFollowupTemplate,
   isStaleProcessing,
   parsePositiveIntEnv,
@@ -186,5 +188,59 @@ describe("parsePositiveIntEnv", () => {
 
   it("truncates a decimal to its integer part (parseInt semantics), not the fallback", () => {
     expect(parsePositiveIntEnv("25.7", 50)).toBe(25);
+  });
+});
+
+describe("decideRetry", () => {
+  const now = new Date("2026-08-09T12:00:00Z");
+
+  it("schedules a retry after the 1st failed attempt, a few minutes out", () => {
+    const decision = decideRetry({ attemptCountAfterFailure: 1, now, random: () => 0 });
+    expect(decision.outcome).toBe("retry");
+    if (decision.outcome === "retry") {
+      const deltaMinutes = (decision.nextAttemptAt.getTime() - now.getTime()) / 60_000;
+      expect(deltaMinutes).toBeCloseTo(5, 5);
+    }
+  });
+
+  it("schedules a longer retry after the 2nd failed attempt than the 1st", () => {
+    const first = decideRetry({ attemptCountAfterFailure: 1, now, random: () => 0 });
+    const second = decideRetry({ attemptCountAfterFailure: 2, now, random: () => 0 });
+    expect(first.outcome).toBe("retry");
+    expect(second.outcome).toBe("retry");
+    if (first.outcome === "retry" && second.outcome === "retry") {
+      expect(second.nextAttemptAt.getTime()).toBeGreaterThan(first.nextAttemptAt.getTime());
+    }
+  });
+
+  it("is exhausted once attemptCountAfterFailure reaches MAX_DELIVERY_ATTEMPTS", () => {
+    expect(decideRetry({ attemptCountAfterFailure: MAX_DELIVERY_ATTEMPTS, now }).outcome).toBe(
+      "exhausted",
+    );
+  });
+
+  it("is exhausted, not retryable-forever, beyond the max", () => {
+    expect(decideRetry({ attemptCountAfterFailure: MAX_DELIVERY_ATTEMPTS + 5, now }).outcome).toBe(
+      "exhausted",
+    );
+  });
+
+  it("jitter only ever widens the delay, never shortens it below the base backoff", () => {
+    const noJitter = decideRetry({ attemptCountAfterFailure: 1, now, random: () => 0 });
+    const maxJitter = decideRetry({ attemptCountAfterFailure: 1, now, random: () => 1 });
+    expect(noJitter.outcome).toBe("retry");
+    expect(maxJitter.outcome).toBe("retry");
+    if (noJitter.outcome === "retry" && maxJitter.outcome === "retry") {
+      expect(maxJitter.nextAttemptAt.getTime()).toBeGreaterThanOrEqual(
+        noJitter.nextAttemptAt.getTime(),
+      );
+      // Jitter is bounded to +20% of the base, not unbounded.
+      const maxDeltaMinutes = (maxJitter.nextAttemptAt.getTime() - now.getTime()) / 60_000;
+      expect(maxDeltaMinutes).toBeLessThanOrEqual(5 * 1.2 + 1e-6);
+    }
+  });
+
+  it("defaults to Math.random when no random function is injected (doesn't throw)", () => {
+    expect(() => decideRetry({ attemptCountAfterFailure: 1, now })).not.toThrow();
   });
 });

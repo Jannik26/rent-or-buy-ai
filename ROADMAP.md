@@ -1,13 +1,14 @@
 # EstateAI — Roadmap & Architekturplan
 
-**Stand: 2026-08-08 · Korrekturrunde 1 + Product-Track-Slice 1
+**Stand: 2026-08-09 · Korrekturrunde 1 + Product-Track-Slice 1
 (Appointments) + Slice 2 (Analytics V1) + Slice 3 (Conversations V1) +
 Verification-Track-Slice 1 (persistierte Playwright-E2E-Basis) +
 Product-Track-Slice 4 (Conversations Foundation — kanonische
 Conversations-/Messages-Domain) + Slice 5 (Automated Lead Follow-ups
 Foundation) + Slice 6 (Production Follow-up Scheduler) + Slice 7
-(Production E-Mail Delivery Foundation) · Kanonisches
-Planungsdokument.**
+(Production E-Mail Delivery Foundation) + Engineering-Workflow-Hardening
+(`estateai-engineering`-Skill) + Slice 8A (E-Mail Delivery Hardening) ·
+Kanonisches Planungsdokument.**
 
 Dieses Dokument ersetzt `.lovable/plan.md` als laufende Roadmap. Es wird bei
 jeder größeren strategischen oder architektonischen Entscheidung aktualisiert
@@ -114,7 +115,7 @@ Branch/Kontext; **Integration in EstateAI selbst** ist PLANNED)
 | Conversations-Ansicht | ✅ DONE (2026-08-08, Product-Track-Slice 3 „Conversations V1" + Slice 4 „Conversations Foundation") | Master-Detail-Ansicht (Liste links, Verlauf rechts, responsive), Suche (Name), Filter (Status/Score), Empty States — seit Slice 4 auf der **kanonischen** `conversations`/`messages`-Domain statt `leads.messages`-JSONB (siehe Abschnitt 7). Sortierung nach `conversations.last_message_at` (echte Spalte, per Trigger gepflegt), Reihenfolge innerhalb einer Conversation nach `sequence` (nie `created_at` — siehe Risiko 10, jetzt gelöst). Lead-Detailseite liest denselben Server-Function-Aufruf, keine zweite Wahrheit mehr. Weiterhin kein Schreibzugriff in der UI selbst (nur der Widget-Chat schreibt, jetzt in die kanonische Domain, siehe unten) |
 | Analytics-Dashboard | ✅ DONE (2026-08-07, Product-Track-Slice 2, „Analytics V1") | Echte, tenant-isolierte Kennzahlen statt Platzhalter: Lead-/Termin-KPIs, Zeitfilter (7/30/90 Tage/gesamt), Trends ggü. Vorperiode, 3-stufiger Funnel, Status-/Score-Verteilung, Tagesverläufe (nur für endliche Zeitfenster). Serverseitige Aggregation über eine RLS-gebundene `SECURITY INVOKER`-SQL-Funktion (`analytics_summary`, kein `company_id`-Parameter — Tenant-Isolation entsteht ausschließlich durch RLS), keine PII in der Antwort. `leads.status='termin'` ohne echten Termin wird bewusst **nicht** in „Aktive Termine"/Conversion mitgezählt, sondern separat als Altbestand ausgewiesen (siehe Abschnitt 9, Punkt 9). 12 SQL-Korrektheits-/RLS-Assertions gegen die echte DB (`supabase/tests/analytics_rls.sql`), 22 Unit-Tests für die reinen Kennzahl-Regeln |
 | E2E-Testinfrastruktur (Playwright) | ✅ DONE (2026-08-08, Verification-Track-Slice 1) | `tests/e2e/` — Core-Journey-Suite (Auth-Guard, Dashboard, Leads inkl. Tenant-Isolation, Conversations, Appointments inkl. Storno-/Wiederherstell-Lifecycle, Analytics inkl. Zeitfensterwechsel, Navigation) + ein Mobile-Smoke-Test. Dedizierter QA-Mandant, deterministische/idempotente Fixtures per fixer ID, Auth per Admin-generiertem Magic-Link + `storageState` (kein neuer Signup). 10/10 grün, dreifach reproduzierbar. Ergänzt, ersetzt nicht, die bestehenden SQL-RLS-Tests. Version gepinnt auf `1.45.0` wegen macOS-Ventura-Browser-Binary-Inkompatibilität neuerer Playwright-Versionen auf dieser Entwicklungsmaschine |
-| Automatisierte Follow-ups | 🟡 PARTIAL (2026-08-08, Slice 5 „Foundation" + Slice 6 „Production Scheduler" + Slice 7 „E-Mail Delivery Foundation") | Engine + Scheduler + E-Mail-Kanal-Foundation vollständig code-seitig fertig: kanonische `conversation_followups`-Tabelle, DB-verankertes Max-3-Limit, Scheduling (24h/72h/144h), race-sicherer Batch-/Claim-Worker (`processDueFollowups`) inkl. Stale-Processing-Recovery, Abbruch bei Lead-Antwort/geschlossener Conversation, Vercel-Cron-Anbindung (alle 5 Min.), austauschbarer `EmailDeliveryAdapter` (Resend, providerseitige Idempotency-Keys, HTML+Text, KI-Transparenz-Hinweis), minimale UI. **Verbleibend, bevor tatsächlich eine echte E-Mail rausgeht:** `EMAIL_DELIVERY_ENABLED`/`EMAIL_PROVIDER_API_KEY`/`EMAIL_SENDER_ADDRESS` sind serverseitig standardmäßig nicht gesetzt (sicherer Default aus, siehe Abschnitt 7/Risiko 19) — ohne echten Resend-Account + verifizierte Absenderdomain bleibt der Kanal inaktiv und der Worker verhält sich weiterhin exakt wie in Slice 6 (nur kanonischer Dashboard-Eintrag). Zusätzlich: `CRON_SECRET` wurde laut Auftraggeber gesetzt, aber die Live-Verifikation in diesem Slice zeigt den authentifizierten Cron-Request weiterhin mit 401 (siehe Risiko 14, aktualisiert) — ungeklärt, kein Blocker für dieses Slice, aber offen |
+| Automatisierte Follow-ups | 🟡 PARTIAL (2026-08-08/09, Slice 5 „Foundation" + Slice 6 „Production Scheduler" + Slice 7 „E-Mail Delivery Foundation" + Slice 8A „E-Mail Delivery Hardening") | Engine + Scheduler + E-Mail-Kanal (inkl. Bounce/Complaint-Webhooks, Suppression, Retry/Backoff, echtem Unsubscribe) vollständig code-seitig fertig. **Scheduler operativ verifiziert** (echter `200` nach Korrektur von `CRON_SECRET`, siehe Risiko 14 — nicht mehr nur code-seitig). **Verbleibend, bevor tatsächlich eine echte E-Mail rausgeht:** `EMAIL_DELIVERY_ENABLED`/`EMAIL_PROVIDER_API_KEY`/`EMAIL_SENDER_ADDRESS`/`EMAIL_PROVIDER_WEBHOOK_SECRET` sind serverseitig standardmäßig nicht gesetzt (sicherer Default aus, siehe Abschnitt 7/Risiko 19/25) — ohne echten Resend-Account + verifizierte Absenderdomain bleibt der Kanal inaktiv und der Worker verhält sich weiterhin wie in Slice 6 (nur kanonischer Dashboard-Eintrag) |
 | DSGVO-Löschfristen | ⏳ PLANNED | `data-retention.ts` definiert Zielwerte (30 Tage Demo, 6–12 Monate ohne Abschluss) explizit als **noch nicht durchgesetzt** |
 | AI-Provider-Anbindung | ✅ DONE (aber nicht abstrahiert) | Direkt `@ai-sdk/anthropic` via Vercel AI SDK (`ai`-Package), kein Gateway/Abstraktionslayer — funktioniert, aber Wechsel des Modells/Anbieters erfordert Codeänderung an einer Stelle (`ai-gateway.server.ts`, aktuell nur ein dünner Wrapper) |
 | Agent/Widget-ID-Struktur (RE/MAX-Vorbereitung) | ⏳ PLANNED | Nur `company_id` existiert; `agent_id`/`widget_id` noch nicht im Schema — siehe Abschnitt 7 |
@@ -499,6 +500,42 @@ werden können, statt auf Phase A zu warten:
   One-Click-Unsubscribe-Endpoint, echter Provider-Roundtrip (keine
   Live-Credentials vorhanden) — alle als neue Risiken in Abschnitt 9
   festgehalten.
+- ✅ **DONE (2026-08-09, Engineering-Workflow-Hardening, kein Produkt-Slice,
+  aber unmittelbar vor Slice 8A durchgeführt)** Der wiederkehrende
+  Implementierungs-Workflow (Git-Preflight, Architektur-zuerst, Supabase/
+  RLS/Tenant-Regeln, Secrets, Quality Gates, Production-Verifikations-
+  Wortwahl, STOPP-Prinzip) ist jetzt im Skill
+  `.claude/skills/estateai-engineering/` zentralisiert statt in jedem
+  Slice-Prompt wiederholt zu werden. CLAUDE.md bleibt kompakt für
+  dauerhafte Produktfakten und verweist jetzt explizit auf den Skill; die
+  Drei-Wege-Klassifikation (CLAUDE.md/Skill/Slice-Prompt) steht direkt in
+  CLAUDE.md selbst (neuer Abschnitt am Dateianfang).
+- ✅ **DONE (2026-08-09, Slice 8A, „E-Mail Delivery Hardening")** Sichert
+  die Slice-7-E-Mail-Foundation gegen die wichtigsten realen
+  Zustellprobleme ab — vollständige Details in Abschnitt 7. Kurzfassung:
+  Resend-Webhook-Empfänger (`/api/internal/email/resend/webhook`, echte
+  Svix-Signaturprüfung über das offizielle `svix`-Package, nicht
+  nachgebaut), Event-Idempotenz über eine neue Dedup-Tabelle, getrennte
+  `delivery_status`-Spur (accepted/delivered/bounced/complained/deferred)
+  statt Überladung des bestehenden Follow-up-`status`, persistente
+  Tenant-scoped Suppression-Liste (`email_suppressions`, geprüft vor
+  jedem Versand), echter signierter One-Click-Unsubscribe-Endpoint
+  (`/api/public/email/unsubscribe`, RFC 8058 `List-Unsubscribe-Post`),
+  begrenztes Retry/Backoff (max. 3 Versuche) ausschließlich für transiente
+  Fehler unter Wiederverwendung desselben Resend-Idempotency-Keys über
+  alle Versuche hinweg (kein Doppelversand-Risiko, echter Test dafür
+  vorhanden). Minimale additive Migration (3 neue Spalten auf
+  `conversation_followups`, 2 neue Tabellen), RLS für beide neuen Tabellen
+  (9/9 Assertions grün), Security Advisor zeigt genau 1 neues, erwartetes
+  INFO (kein neues WARN). 40 neue Unit-Tests + 20 neue
+  Integrationsszenarien (Webhook-Signatur echt/gefälscht/dupliziert,
+  Bounce/Complaint/Delivered, Suppression vor Versand, Unsubscribe
+  gültig/manipuliert/Tenant-Isolation, Retry erfolgreich/erschöpft/
+  permanent) grün gegen die verbundene Projekt-DB, bestehende
+  Slice-5/6/7-Suiten unverändert grün. Bewusst nicht Teil dieses Slices:
+  vollständige Inbound-E-Mail-Conversations, echter Provider-Roundtrip
+  (weiterhin keine Resend-Credentials vorhanden), Webhook-Secret noch
+  nicht in Production gesetzt.
 - Lead-Pipeline-Verbesserungen, weitere Maklerfunktionen
 - Beginn von Phase C (Matching/Vergleich/Kosten) kann parallel geplant
   werden, sobald das Immobilien-Datenmodell (Abschnitt 7) steht
@@ -1073,6 +1110,100 @@ benannt, nicht `email_...` — könnte später auch für WhatsApp
 wiederverwendet werden). Keine neue Tabelle, keine RLS-Änderung nötig
 (15/15 Assertions erneut grün, siehe Abschnitt 9).
 
+**E-Mail Delivery Hardening (✅ DONE, 2026-08-09, Slice 8A):** sichert die
+Slice-7-Foundation gegen die wichtigsten realen Zustellprobleme ab, ohne
+die Adapter-Kette oder die Idempotenz-/Crash-Strategie aus Slice 7
+anzufassen.
+
+*Webhook-Architektur:* Resend liefert Events über Svix aus (verifiziert
+gegen Resends aktuelle Doku, nicht angenommen — `svix-id`/
+`svix-timestamp`/`svix-signature`-Header, HMAC-Signatur). Die
+Signaturprüfung nutzt das offizielle `svix`-npm-Package (`Webhook.verify`),
+nicht eine selbst nachgebaute HMAC-Prüfung — ausdrückliche Vorgabe der
+Aufgabenstellung, keine Webhook-Security aus Erinnerung zu implementieren.
+Der Empfänger (`POST /api/internal/email/resend/webhook`) verifiziert den
+**rohen** Request-Body (Resends eigene Doku warnt explizit davor, den
+Body zu parsen und neu zu serialisieren, das würde die Signatur brechen),
+lehnt bei fehlendem/ungültigem Secret oder fehlender/ungültiger Signatur
+grundsätzlich mit 401 ab, ohne die DB zu berühren.
+
+*Event-Idempotenz:* Resend dokumentiert „at-least-once"-Zustellung — eine
+neue Tabelle `email_webhook_events` (Primärschlüssel = Svix' eigene
+`svix-id`) dient als Dedup-Ledger. Ein wiederholt zugestelltes Event wird
+korrekt mit „ok" quittiert, aber kein zweites Mal verarbeitet (kein
+doppelter Statusübergang, keine doppelte Suppression).
+
+*Delivery-Statusmodell:* bewusst **getrennt** vom bestehenden Follow-up-
+`status` (Aufgabenstellung Phase C6 explizit) — drei neue Spalten auf
+`conversation_followups` (`delivery_status`, `delivery_status_updated_at`,
+`bounce_type`), nicht überladen. `status='sent'` bedeutet weiterhin nur
+„Provider hat angenommen", nie „im Postfach zugestellt" — das war schon
+in Slice 7 so und bleibt unverändert; `delivery_status` liefert erst durch
+ein Webhook-Event echte Zustellinformation nach.
+
+*Bounce/Complaint-Handling:* nur ein bestätigter **harter** Bounce
+(Resend/AWS-SES-Klassifikation `bounce.type = "Permanent"`, verifiziert
+anhand von Resends dokumentiertem Beispiel-Payload) suppresst sofort — ein
+weicher/unklarer Bounce wird auf der Zeile vermerkt, suppresst aber nicht
+automatisch (Aufgabenstellung: „soweit Bounce-Typ dies rechtfertigt"). Ein
+Complaint suppresst dagegen immer, ohne Ausnahme, nie automatisch
+zurückgesetzt.
+
+*Suppression Foundation:* neue Tabelle `email_suppressions`
+(`company_id`, `email`, `reason` ∈ `bounce`/`complaint`/`unsubscribe`/
+`manual`), UNIQUE `(company_id, email)` — tenant-scoped, nicht global:
+eine Suppression bei Firma A verändert Firma B's Möglichkeit, dieselbe
+Adresse anzuschreiben, nicht. Vor **jedem** externen Versand geprüft
+(`email-delivery-adapter.ts`) — auch vor jedem Retry-Versuch, nicht nur
+beim ersten, weil ein Retry exakt denselben Claim-→-Prüfen-→-Versenden-
+Pfad durchläuft wie ein Erstversuch. Ein suppresster Empfänger führt zu
+`status='skipped'`, `skip_reason='recipient_suppressed'` — kein
+Provider-Aufruf, kein `failed`.
+
+*Unsubscribe:* echter, serverseitig signierter Token
+(`companyId`+`email`, HMAC-SHA256, kein erratbarer Bare-ID-Zugriff), kein
+Ablaufdatum (ein „Stopp"-Signal soll nicht stillschweigend verfallen).
+Zwei Flows auf derselben URL: GET (Mensch klickt Link in der Mail) zeigt
+nur eine Bestätigungsseite und mutiert **nichts** — E-Mail-Sicherheits-
+scanner „vor-besuchen" Links in Postfächern automatisiert, ein
+mutierendes GET hätte Leads ungewollt abgemeldet; POST (Bestätigungs-
+Button oder ein Mail-Client, der `List-Unsubscribe-Post` nutzt) wendet die
+Suppression sofort an, idempotent bei wiederholtem Aufruf. Jede
+Follow-up-Mail trägt `List-Unsubscribe`/`List-Unsubscribe-Post`
+(RFC 8058 One-Click), beide zeigen auf denselben Endpoint.
+
+*Retry/Backoff:* nur für **transiente** Fehler (429, ausgewählte 5xx,
+Netzwerkfehler — der Resend-Adapter aus Slice 7 unterschied das bereits,
+Slice 8A nutzt dieses `retryable`-Flag jetzt aktiv). Zwei neue Spalten
+(`attempt_count`, `next_attempt_at`) statt einer neuen Queue-Plattform;
+die bestehende Claim-Query wurde um `coalesce(next_attempt_at,
+scheduled_for) <= now()` erweitert — ein Follow-up ohne anstehenden Retry
+verhält sich exakt wie zuvor. Backoff konservativ und begrenzt (5 Min. →
+20 Min., max. 3 Versuche gesamt, mit Jitter), danach `failed` mit
+maschinenlesbarem `retry_exhausted:`-Präfix. **Entscheidend:** derselbe
+Resend-Idempotency-Key (die Follow-up-Zeilen-ID aus Slice 7) wird über
+alle Versuche hinweg wiederverwendet — ein Timeout kann dadurch nie zu
+zwei tatsächlich zugestellten E-Mails führen, durch einen echten
+Integrationstest verifiziert (zwei reale Provider-Aufrufe, ein
+fehlgeschlagener und ein erfolgreicher, mit identischem Idempotency-Key).
+Vor jedem Retry-Versuch werden Suppression, Conversation-Status und
+Lead-Antwort erneut geprüft — kostenlos, weil ein Retry denselben
+Due-Row-Claim-Pfad durchläuft wie ein Erstversuch, nicht einen separaten.
+
+*Datenmodell:* additive Migration
+(`20260808230415_add_email_delivery_hardening.sql`) — 3 neue Spalten auf
+`conversation_followups`, 2 neue Tabellen (`email_suppressions`,
+`email_webhook_events`). RLS auf beiden neuen Tabellen (9/9 Assertions
+grün, `supabase/tests/email_delivery_hardening_rls.sql`); die bestehenden
+conversation_followups-Policies gelten unverändert auch für die neuen
+Spalten. Security Advisor zeigt genau 1 neues INFO
+(`email_webhook_events` „RLS enabled, no policies" — dieselbe bewusste,
+service-role-only-Ausnahme wie `admin_audit_log`), kein neues WARN.
+
+*Noch nicht Teil dieses Slices:* echter Provider-Roundtrip (weiterhin
+keine Resend-Credentials), `EMAIL_PROVIDER_WEBHOOK_SECRET` noch nicht in
+Production gesetzt, vollständige Inbound-E-Mail-Conversations.
+
 Für kommende Phasen wahrscheinlich nötig (grobe Skizze, vor Umsetzung im
 Detail zu planen):
 
@@ -1290,28 +1421,32 @@ Kriterien zurückführbar sein (siehe Beispiel in Phase C).
     blockierend; externe/parallele Aktivität weiterhin die plausibelste,
     unbewiesene Erklärung.
 14. **`processDueFollowups` ist nicht an einen automatischen Scheduler
-    angeschlossen — 🟡 Code-seitig GELÖST (2026-08-08, Slice 6), Aktivierung
-    unklar/ungeklärt (aktualisiert Slice 7).** Der Worker-Endpoint
-    (`/api/internal/followups/process`) und die `vercel.json`-Cron-
-    Konfiguration (alle 5 Minuten) sind vollständig implementiert,
-    getestet (9/9 Integrationsszenarien inkl. echter Nebenläufigkeit) und
-    commitet. Der Cron-Job selbst feuert nachweislich zuverlässig alle 5
-    Minuten (per Vercel Runtime Logs verifiziert). **Neuer Befund aus
-    Slice 7:** der Auftraggeber gab an, `CRON_SECRET` im Vercel-Projekt
-    gesetzt und Production neu deployt zu haben; diese Session hat das
-    technisch nachverfolgt (neues Deployment `dpl_41vXKPSzskgnV17S4j6xn9KgMZQ4`,
-    `READY`, matcht den erwarteten Commit) — der erste Cron-Tick **nach**
-    diesem Redeploy (19:10:06 UTC) antwortete laut Vercel Runtime Logs
-    aber weiterhin mit **401**, nicht mit einem erfolgreichen,
-    authentifizierten Lauf. Mögliche Ursachen (nicht geprüft, da außerhalb
-    der Werkzeuge dieser Session — kein Zugriff auf die tatsächliche
-    Vercel-Env-Var-Konfiguration): `CRON_SECRET` wurde ggf. nur für
-    „Preview", nicht für „Production" gesetzt; ein Tippfehler/Leerzeichen
-    im Wert; oder ein Timing-Problem zwischen Setzen und Redeploy. **Nicht
-    geraten, sondern transparent als offen dokumentiert** — dieser Fund
-    wurde im Slice-7-Abschlussbericht an den Auftraggeber gemeldet, kein
-    STOPP-Kriterium (fail closed bleibt sicher, kein Datenrisiko), aber
-    weiterhin ungeklärt zum Zeitpunkt dieses Commits.
+    angeschlossen — ✅ VOLLSTÄNDIG GELÖST, operativ verifiziert
+    (2026-08-08/09).** Chronologie: Slice 6 implementierte Endpoint +
+    Cron-Konfiguration vollständig (9/9 Integrationsszenarien grün); nach
+    Slice 7 zeigte eine gezielte Diagnose, dass trotz vom Auftraggeber
+    gesetztem `CRON_SECRET` und einem Redeploy weiterhin **43 echte
+    Cron-Ticks in Folge mit 401** endeten (über zwei unabhängige
+    Deployments, per Vercel Runtime Logs verifiziert — die exakte
+    5-Minuten-Taktung über Stunden hinweg auf einem internen Pfad wurde
+    als praktisch beweiskräftig für echten Vercel-Cron-Traffic bewertet,
+    nicht Bot-Rauschen). Wahrscheinlichste Ursache: `CRON_SECRET` war im
+    Vercel-Dashboard nicht (auch) für den Scope „Production" aktiviert.
+    Der Auftraggeber wurde gebeten, dies im Dashboard zu prüfen und zu
+    korrigieren. **Nach der Korrektur + einem weiteren Redeploy
+    (`dpl_FAE5NJkrbQeNN6vLro4yaPbjwtJ2`, erstellt 22:52:55 UTC) lieferte
+    der allererste Cron-Tick danach (22:55:10 UTC) einen echten `200`** —
+    bestätigt nicht nur über den HTTP-Statuscode, sondern über einen
+    exakt korrelierten `system_events`-Eintrag
+    (`run 3ada0904-ada6-4f9b-b9a5-69bc4b1b1d9e`, `mode=canonical, claimed
+    0, sent 0, ... recovered 0`, `durationMs: 1780`) — ein Beweis, dass
+    der Worker-Code tatsächlich authentifiziert durchlief und real gegen
+    die DB lief, nicht nur ein zufälliger 200 von anderswo. `claimed: 0`
+    ist hierbei korrekt und erwartet (aktuell keine echten fälligen
+    Follow-ups) — die Erfolgsbedingung war ausdrücklich ein erfolgreicher
+    Lauf, nicht ein tatsächlich verarbeiteter Follow-up. **Der Production-
+    Scheduler ist damit ab sofort operativ funktionsfähig, nicht nur
+    code-seitig fertig.**
 15. **Max-3-Follow-ups als Lifetime-Cap, nicht pro Episode** (offene
     Produktentscheidung, dokumentiert in Abschnitt 7) — sobald eine
     Follow-up-Sequenz einmal für eine Conversation existiert (auch wenn
@@ -1373,44 +1508,38 @@ Kriterien zurückführbar sein (siehe Beispiel in Phase C).
     (z. B. eine Subdomain von `estateai.de`) per DNS verifizieren,
     `EMAIL_PROVIDER_API_KEY`/`EMAIL_SENDER_ADDRESS` (+ optional
     `EMAIL_REPLY_TO`) in Vercel setzen, dann `EMAIL_DELIVERY_ENABLED=true`.
-20. **Kein Bounce-/Complaint-/Delivered-Webhook-Handling** (neu, Slice 7)
-    — Resend liefert diese Events nachweislich (`delivered`, `bounced`,
-    `complained`, u. a., per Recherche verifiziert), aber diese Session
-    hat bewusst keinen Webhook-Endpoint gebaut (Aufgabenstellung: „nur
-    wenn ohne Scope-Explosion sauber möglich" — ein neuer öffentlicher,
-    signaturverifizierter Endpoint plus Bounce-/Suppression-Datenmodell
-    ist eine eigene sicherheitsrelevante Erweiterung, kein Ein-Zeiler).
-    EstateAI weiß aktuell nicht, ob eine „gesendete" E-Mail tatsächlich
-    im Postfach ankam oder bounced ist — nur, dass der Provider sie
-    angenommen hat (`outcome: "accepted"`, siehe `EmailSendResult`).
-    Kandidat für Slice 8 Option A (Hardening).
-21. **Keine Inbound-Reply-Verarbeitung** (neu, Slice 7) — Resend
-    unterstützt Inbound-E-Mail-Empfang (`email.received`-Event, eigenes
-    „Inbound"-Feature), aber eine Lead-Antwort per E-Mail fließt aktuell
-    nirgends automatisch in `conversations`/`messages` zurück und stoppt
-    keine offenen Follow-ups. Der `EMAIL_REPLY_TO`-Posteingang ist
-    aktuell nur ein von Menschen überwachtes Postfach, keine
-    automatisierte Pipeline. Kandidat für Slice 8 Option B (Inbound).
+20. **Kein Bounce-/Complaint-/Delivered-Webhook-Handling — ✅ GELÖST
+    (2026-08-09, Slice 8A).** Resend liefert diese Events über Svix aus
+    (verifiziert); der neue `/api/internal/email/resend/webhook`-Endpoint
+    verifiziert die Signatur echt, dedupliziert über
+    `email_webhook_events`, aktualisiert `conversation_followups.
+    delivery_status` und suppresst bei hartem Bounce/Complaint. **Noch
+    offen:** `EMAIL_PROVIDER_WEBHOOK_SECRET` ist in Production nicht
+    gesetzt (kein Resend-Account vorhanden, siehe Risiko 19) und kein
+    echter Resend-Webhook wurde je live zugestellt/verifiziert — nur
+    gegen real signierte Testrequests (siehe Risiko 25).
+21. **Keine Inbound-Reply-Verarbeitung** (unverändert seit Slice 7, nicht
+    Teil von Slice 8A) — Resend unterstützt Inbound-E-Mail-Empfang
+    (`email.received`-Event, eigenes „Inbound"-Feature), aber eine
+    Lead-Antwort per E-Mail fließt weiterhin nirgends automatisch in
+    `conversations`/`messages` zurück und stoppt keine offenen
+    Follow-ups. Der `EMAIL_REPLY_TO`-Posteingang ist weiterhin nur ein
+    von Menschen überwachtes Postfach, keine automatisierte Pipeline.
+    Kandidat für Slice 8B (Inbound).
 22. **Kein automatisiertes Retry/Backoff bei transienten Provider-
-    Fehlern** (neu, Slice 7) — ein Timeout/429/5xx von Resend landet
-    direkt auf `failed` (mit `transient:`-Präfix im `error_code` zur
-    späteren Unterscheidung), wird aber nie automatisch erneut versucht;
-    das erfordert manuelles Eingreifen oder eine künftige Backoff-
-    Infrastruktur. Bewusst nicht gebaut (Aufgabenstellung: „nicht
-    improvisieren, als Technical Debt dokumentieren"). Kein
-    Doppelversand-Risiko dadurch (`failed`-Zeilen werden vom Claim nie
-    erneut aufgegriffen), aber ein Follow-up mit einem rein
-    netzwerkbedingten, einmaligen Fehler bleibt dauerhaft unzugestellt,
-    bis jemand die Zeile manuell zurücksetzt.
-23. **Kein echter One-Click-Unsubscribe** (neu, Slice 7) — der
-    E-Mail-Footer enthält einen ehrlichen „antworten Sie einfach"-
-    Hinweis statt eines vorgetäuschten Unsubscribe-Mechanismus (siehe
-    Abschnitt 7). Für niedriges, transaktionsnahes Volumen aktuell kein
-    akuter Compliance-Blocker, aber bei wachsendem Versandvolumen
-    relevant (Gmail/Yahoo verlangen ab bestimmten Versandmengen einen
-    echten One-Click-Unsubscribe-Header). Braucht eine eigene öffentliche
-    Token-/Endpoint-Architektur — bewusst als Folge-Slice abgegrenzt,
-    nicht in Slice 7 halbfertig gebaut.
+    Fehlern — ✅ GELÖST (2026-08-09, Slice 8A).** Ein Timeout/429/5xx
+    schedult jetzt einen begrenzten Retry (max. 3 Versuche gesamt, 5/20
+    Min. Backoff mit Jitter) statt sofort `failed` zu setzen — unter
+    Wiederverwendung desselben Resend-Idempotency-Keys über alle
+    Versuche hinweg (kein neues Doppelversand-Risiko, echter
+    Integrationstest dafür vorhanden, siehe Abschnitt 7). Nach
+    Erschöpfung weiterhin `failed`, mit `retry_exhausted:`-Präfix statt
+    des rohen Fehlercodes.
+23. **Kein echter One-Click-Unsubscribe — ✅ GELÖST (2026-08-09,
+    Slice 8A).** Ein echter, serverseitig signierter Token-Endpoint
+    (`/api/public/email/unsubscribe`) ersetzt den reinen
+    „antworten Sie"-Hinweis; jede Follow-up-Mail trägt zusätzlich
+    `List-Unsubscribe`/`List-Unsubscribe-Post` (RFC 8058 One-Click).
 24. **`fileParallelism: false` verlangsamt die gesamte Testsuite** (neu,
     Slice 7, operative Randnotiz, kein Produktrisiko) — die in diesem
     Slice gefundene Cross-File-Testinterferenz (siehe Abschnitt 6) wurde
@@ -1421,30 +1550,58 @@ Kriterien zurückführbar sein (siehe Beispiel in Phase C).
     in Produktion). Falls die Testsuite künftig deutlich wächst, könnte
     eine gezieltere Lösung (z. B. nur Integrationstests sequenziell,
     Unit-Tests weiterhin parallel) sinnvoll werden.
+25. **Kein live-verifizierter Resend-Webhook** (neu, Slice 8A) — der
+    Webhook-Empfänger ist vollständig implementiert und gegen real
+    signierte Testrequests (über das echte `svix`-Package) verifiziert,
+    aber kein tatsächliches Resend-Konto hat je ein echtes Event
+    zugestellt (siehe Risiko 19 — weiterhin kein Account/keine
+    verifizierte Domain). `EMAIL_PROVIDER_WEBHOOK_SECRET` ist in
+    Production nicht gesetzt. Nötiger externer Schritt vor Aktivierung:
+    im Resend-Dashboard einen Webhook-Endpoint auf
+    `https://<domain>/api/internal/email/resend/webhook` anlegen, das dort
+    generierte Signing-Secret als `EMAIL_PROVIDER_WEBHOOK_SECRET` in
+    Vercel setzen.
+26. **Neue Abhängigkeit: `svix`** (neu, Slice 8A) — für die
+    Webhook-Signaturprüfung hinzugefügt (offizielles Package, von Resend
+    selbst für Webhook-Zustellung genutzt). Zieht nur `standardwebhooks`
+    als Unterabhängigkeit nach sich, keine der von `npm audit` gemeldeten
+    Vulnerabilities stammt aus diesem Paket (alle bereits vor Slice 8A
+    vorhanden — `@playwright/test`, `mermaid`, `postcss`, u. a., separat
+    reproduziert). Serverseitig gebündelt, nicht im Client-Bundle
+    (verifiziert).
 
 ---
 
 ## 10. Empfehlung: nächster Schritt
 
-**Update 2026-08-08 (Product-Track-Slice 7, „Production E-Mail Delivery
-Foundation"):** erster echter externer Kanal für Follow-ups ist
-vollständig implementiert, getestet und commitet — siehe Abschnitt 7 für
-die volle Architektur. **Exakter, ehrlich verifizierter Aktivierungsstatus
-(keine Behauptung ohne Prüfung):** der Code deployt automatisch mit
-diesem Push (GitHub → Vercel Auto-Deploy, weiterhin aktiv), aber der
-E-Mail-Kanal selbst ist **nicht live** — `EMAIL_DELIVERY_ENABLED` ist
-default aus, und selbst wenn er gesetzt würde, fehlen
-`EMAIL_PROVIDER_API_KEY`/`EMAIL_SENDER_ADDRESS` vollständig in
-Production (kein Resend-Account, keine verifizierte Domain — bewusste
-Entscheidung dieses Slices, siehe Risiko 19). Bis diese drei Env-Vars
-gesetzt sind, verhält sich das System exakt wie am Ende von Slice 6:
-Follow-ups werden weiterhin nur als kanonischer Dashboard-Eintrag
-„gesendet". **Zusätzlicher, unabhängiger Befund aus diesem Slice:** die
-Scheduler-Aktivierung aus Slice 6 (Risiko 14) ist trotz laut Auftraggeber
-gesetztem `CRON_SECRET` und einem Redeploy laut Vercel Runtime Logs
-weiterhin nicht wirksam (der erste Cron-Tick nach dem Redeploy antwortete
-noch mit 401) — offen, nicht in diesem Slice behoben (siehe Risiko 14 für
-Details), kein STOPP-Grund, aber wichtig für den Auftraggeber zu wissen.
+**Update 2026-08-09 (Engineering-Workflow-Hardening + Product-Track-
+Slice 8A, „E-Mail Delivery Hardening"):** zwei unabhängige Ergebnisse
+dieser Session:
+
+1. **Risiko 14 (Scheduler-Aktivierung) ist jetzt operativ, nicht nur
+   code-seitig, gelöst.** Nach der vom Auftraggeber vorgenommenen
+   Korrektur der `CRON_SECRET`-Konfiguration im Vercel-Dashboard lieferte
+   der erste echte Cron-Tick nach dem folgenden Redeploy
+   (`dpl_FAE5NJkrbQeNN6vLro4yaPbjwtJ2`, 22:55:10 UTC) einen echten `200` —
+   verifiziert nicht nur über den HTTP-Status, sondern über einen exakt
+   korrelierten `system_events`-Eintrag desselben Runs. Der
+   Production-Scheduler läuft damit tatsächlich, nicht nur theoretisch.
+2. **Slice 8A** sichert die Slice-7-E-Mail-Foundation gegen Bounce/
+   Complaint/transiente Fehler/fehlendes Unsubscribe ab — siehe
+   Abschnitt 7 für die volle Architektur, Risiken 20/22/23 sind jetzt
+   gelöst.
+
+**Exakter, ehrlich verifizierter Aktivierungsstatus des E-Mail-Kanals
+selbst (keine Behauptung ohne Prüfung):** weiterhin **nicht live** —
+`EMAIL_DELIVERY_ENABLED` ist default aus, und `EMAIL_PROVIDER_API_KEY`/
+`EMAIL_SENDER_ADDRESS`/`EMAIL_PROVIDER_WEBHOOK_SECRET` fehlen weiterhin
+vollständig in Production (kein Resend-Account, keine verifizierte
+Domain — unverändert seit Slice 7, siehe Risiko 19). Bis diese Env-Vars
+gesetzt sind, verhält sich das System weiterhin wie am Ende von Slice 6:
+Follow-ups werden nur als kanonischer Dashboard-Eintrag „gesendet" — der
+Scheduler selbst läuft jetzt zwar zuverlässig (siehe oben), aber ohne
+Provider-Konfiguration bleibt er beim kanonischen Kanal, genau wie
+entworfen.
 
 Rest dieses Abschnitts bleibt als Empfehlung für die **weiteren** Schritte
 stehen — weiterhin **nicht** Teil eines bereits erteilten Auftrags, außer
@@ -1469,17 +1626,15 @@ explizit bestätigt:
 
 - Rechtstexte-Platzhalter
 - DSGVO-Löschjob-Durchsetzung
-- `CRON_SECRET`-Aktivierung ungeklärt (siehe Risiko 14, aktualisiert
-  Slice 7) — laut Auftraggeber gesetzt, aber Live-Verifikation zeigt
-  weiterhin 401 nach dem Redeploy; braucht eine erneute Prüfung der
-  tatsächlichen Vercel-Env-Var-Konfiguration (Production- vs.
-  Preview-Scope, exakter Wert)
-- E-Mail-Kanal-Aktivierung (siehe Risiko 19) — Resend-Account anlegen,
+- E-Mail-Kanal-Aktivierung (siehe Risiko 19/25) — Resend-Account anlegen,
   Absenderdomain per DNS verifizieren, `EMAIL_PROVIDER_API_KEY`/
   `EMAIL_SENDER_ADDRESS`/`EMAIL_REPLY_TO` in Vercel setzen, dann
-  `EMAIL_DELIVERY_ENABLED=true` — technisch vollständig vorbereitet,
-  aber bewusst nicht automatisiert (Secrets/Domain-Entscheidungen sind
-  keine Dinge, die eine Session selbst festlegt)
+  `EMAIL_DELIVERY_ENABLED=true`; zusätzlich für Slice 8A: im
+  Resend-Dashboard einen Webhook-Endpoint auf
+  `/api/internal/email/resend/webhook` anlegen und das Signing-Secret als
+  `EMAIL_PROVIDER_WEBHOOK_SECRET` setzen — technisch vollständig
+  vorbereitet, aber bewusst nicht automatisiert (Secrets/Domain-
+  Entscheidungen sind keine Dinge, die eine Session selbst festlegt)
 - `leads.status='termin'`-Dual-Source-Refactor (siehe Risiko 9) — technische
   Schuld, kein akuter Blocker, solange UI/Analytics sie weiterhin korrekt
   behandeln
@@ -1489,32 +1644,18 @@ explizit bestätigt:
   Abschnitt 7) — kein akuter Blocker, die App liest die Legacy-Spalte
   bereits nirgends mehr
 
-**Konkreter nächster Schritt (Slice 8) — zwei sinnvolle Kandidaten,
-Entscheidung bewusst noch nicht getroffen, wie in der Aufgabenstellung
-gefordert:**
-
-**Option A — E-Mail Delivery Hardening:** Provider-Webhooks
-(`delivered`/`bounced`/`complained`, siehe Risiko 20), eine Suppression-
-Liste für dauerhaft bouncende Adressen, echtes Retry/Backoff für
-transiente Fehler (Risiko 22), ein echter One-Click-Unsubscribe-Endpoint
-(Risiko 23). Sinnvoll, sobald echter Versand über einen längeren
-Zeitraum läuft — macht den bereits gebauten Kanal robust, statt ihn
-blind zu erweitern.
-
-**Option B — Inbound E-Mail Replies:** eine echte Antwortadresse mit
-Inbound-Routing (Resend unterstützt das bereits, siehe Abschnitt 7),
-Zuordnung eingehender Antworten zur richtigen Conversation, kanonische
-`sender_type='lead'`-Nachrichten aus echten E-Mail-Antworten, automatisches
-Stoppen offener Follow-ups bei einer echten Antwort — schließt Risiko 21
-und macht den Kanal in beide Richtungen echt, nicht nur ausgehend.
-
-Beide Optionen setzen auf demselben Slice-7-Fundament auf (Adapter-
-Architektur, `EmailProvider`-Interface, Resend-Wahl) und schließen sich
-nicht gegenseitig aus — welche zuerst kommt, hängt davon ab, ob nach
-Aktivierung des Kanals eher Zustellzuverlässigkeit oder echte
-Zwei-Wege-Kommunikation den größeren Makler-Mehrwert bringt. Diese
-Entscheidung wird **erst nach diesem Slice-7-Abschlussbericht** getroffen,
-nicht hier vorweggenommen.
+**Konkreter nächster Schritt: Slice 8B — Inbound E-Mail Replies.** Mit
+Slice 8A ist die ausgehende Seite des E-Mail-Kanals jetzt robust
+(Zustellstatus, Suppression, Retry, Unsubscribe) — die einzige verbleibende
+strukturelle Lücke ist, dass der Kanal nur in eine Richtung „echt" ist.
+Slice 8B würde: eine echte Antwortadresse mit Inbound-Routing (Resend
+unterstützt das bereits, siehe Abschnitt 7), sichere Conversation-
+Auflösung, kanonische `sender_type='lead'`-Nachrichten aus echten
+E-Mail-Antworten, automatisches Stoppen offener Follow-ups bei einer
+echten Antwort, und eine Conversation-UI, die den echten E-Mail-Dialog
+zeigt — schließt Risiko 21. Setzt auf demselben Slice-7/8A-Fundament auf
+(Adapter-Architektur, `EmailProvider`-Interface, Resend-Wahl, das jetzt
+vorhandene Webhook-Framework für `email.received`).
 
 Diese Empfehlung wird hier **nicht automatisch umgesetzt** — das ist die
 nächste, separat zu bestätigende Aufgabe.
