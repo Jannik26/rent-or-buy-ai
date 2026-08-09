@@ -94,6 +94,8 @@ describe("selectFollowupDeliveryAdapter", () => {
     replyToAddress: "hello@estateai.de",
     appBaseUrl: "https://rent-or-buy-ai.vercel.app",
     unsubscribeSecret: "test-unsubscribe-secret",
+    inboundDomain: undefined,
+    inboundTokenSecret: undefined,
   };
 
   it("falls back to canonical when EMAIL_DELIVERY_ENABLED is unset, even with full provider config present", () => {
@@ -136,6 +138,25 @@ describe("selectFollowupDeliveryAdapter", () => {
     expect(adapter).toBeDefined();
   });
 
+  it("still selects email mode when inbound config is present (Reply-To routing is additive, never a precondition)", () => {
+    const { mode, adapter } = selectFollowupDeliveryAdapter({
+      ...validEmailEnv,
+      inboundDomain: "reply.estateai.de",
+      inboundTokenSecret: "test-inbound-secret",
+    });
+    expect(mode).toBe("email");
+    expect(adapter).toBeDefined();
+  });
+
+  it("still selects email mode when inbound config is only half-present (falls back to static Reply-To, never blocks delivery)", () => {
+    const { mode } = selectFollowupDeliveryAdapter({
+      ...validEmailEnv,
+      inboundDomain: "reply.estateai.de",
+      inboundTokenSecret: undefined,
+    });
+    expect(mode).toBe("email");
+  });
+
   it("never throws for any combination of missing/invalid inputs", () => {
     const combos = [
       {},
@@ -152,6 +173,8 @@ describe("selectFollowupDeliveryAdapter", () => {
           replyToAddress: undefined,
           appBaseUrl: undefined,
           unsubscribeSecret: undefined,
+          inboundDomain: undefined,
+          inboundTokenSecret: undefined,
           ...env,
         }),
       ).not.toThrow();

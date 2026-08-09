@@ -299,3 +299,31 @@ export function resolveEmailProviderConfig(env: {
     unsubscribeSecret,
   };
 }
+
+// ============================================================================
+// Inbound config (Product Track slice 8B, see ROADMAP.md) — deliberately a
+// SEPARATE, independent resolver from resolveEmailProviderConfig above, not
+// folded into it (task Phase 21): outbound email must keep working exactly
+// as in slice 7/8A whether or not inbound is configured. Missing inbound
+// config means "no conversation-specific Reply-To this send, use the
+// static one" — never an error, never a reason to fall back to the
+// canonical (non-email) channel.
+// ============================================================================
+
+export type InboundConfig = {
+  inboundDomain: string;
+  tokenSecret: string;
+};
+
+/** Returns null unless BOTH pieces are present — a half-configured inbound
+ * setup (e.g. a domain without a secret) is treated the same as
+ * unconfigured, never a broken half-state. */
+export function resolveInboundConfig(env: {
+  inboundDomain: string | undefined;
+  tokenSecret: string | undefined;
+}): InboundConfig | null {
+  const inboundDomain = env.inboundDomain?.trim();
+  const tokenSecret = env.tokenSecret?.trim();
+  if (!inboundDomain || !tokenSecret) return null;
+  return { inboundDomain, tokenSecret };
+}

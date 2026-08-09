@@ -115,7 +115,7 @@ Branch/Kontext; **Integration in EstateAI selbst** ist PLANNED)
 | Conversations-Ansicht | ✅ DONE (2026-08-08, Product-Track-Slice 3 „Conversations V1" + Slice 4 „Conversations Foundation") | Master-Detail-Ansicht (Liste links, Verlauf rechts, responsive), Suche (Name), Filter (Status/Score), Empty States — seit Slice 4 auf der **kanonischen** `conversations`/`messages`-Domain statt `leads.messages`-JSONB (siehe Abschnitt 7). Sortierung nach `conversations.last_message_at` (echte Spalte, per Trigger gepflegt), Reihenfolge innerhalb einer Conversation nach `sequence` (nie `created_at` — siehe Risiko 10, jetzt gelöst). Lead-Detailseite liest denselben Server-Function-Aufruf, keine zweite Wahrheit mehr. Weiterhin kein Schreibzugriff in der UI selbst (nur der Widget-Chat schreibt, jetzt in die kanonische Domain, siehe unten) |
 | Analytics-Dashboard | ✅ DONE (2026-08-07, Product-Track-Slice 2, „Analytics V1") | Echte, tenant-isolierte Kennzahlen statt Platzhalter: Lead-/Termin-KPIs, Zeitfilter (7/30/90 Tage/gesamt), Trends ggü. Vorperiode, 3-stufiger Funnel, Status-/Score-Verteilung, Tagesverläufe (nur für endliche Zeitfenster). Serverseitige Aggregation über eine RLS-gebundene `SECURITY INVOKER`-SQL-Funktion (`analytics_summary`, kein `company_id`-Parameter — Tenant-Isolation entsteht ausschließlich durch RLS), keine PII in der Antwort. `leads.status='termin'` ohne echten Termin wird bewusst **nicht** in „Aktive Termine"/Conversion mitgezählt, sondern separat als Altbestand ausgewiesen (siehe Abschnitt 9, Punkt 9). 12 SQL-Korrektheits-/RLS-Assertions gegen die echte DB (`supabase/tests/analytics_rls.sql`), 22 Unit-Tests für die reinen Kennzahl-Regeln |
 | E2E-Testinfrastruktur (Playwright) | ✅ DONE (2026-08-08, Verification-Track-Slice 1) | `tests/e2e/` — Core-Journey-Suite (Auth-Guard, Dashboard, Leads inkl. Tenant-Isolation, Conversations, Appointments inkl. Storno-/Wiederherstell-Lifecycle, Analytics inkl. Zeitfensterwechsel, Navigation) + ein Mobile-Smoke-Test. Dedizierter QA-Mandant, deterministische/idempotente Fixtures per fixer ID, Auth per Admin-generiertem Magic-Link + `storageState` (kein neuer Signup). 10/10 grün, dreifach reproduzierbar. Ergänzt, ersetzt nicht, die bestehenden SQL-RLS-Tests. Version gepinnt auf `1.45.0` wegen macOS-Ventura-Browser-Binary-Inkompatibilität neuerer Playwright-Versionen auf dieser Entwicklungsmaschine |
-| Automatisierte Follow-ups | 🟡 PARTIAL (2026-08-08/09, Slice 5 „Foundation" + Slice 6 „Production Scheduler" + Slice 7 „E-Mail Delivery Foundation" + Slice 8A „E-Mail Delivery Hardening") | Engine + Scheduler + E-Mail-Kanal (inkl. Bounce/Complaint-Webhooks, Suppression, Retry/Backoff, echtem Unsubscribe) vollständig code-seitig fertig. **Scheduler operativ verifiziert** (echter `200` nach Korrektur von `CRON_SECRET`, siehe Risiko 14 — nicht mehr nur code-seitig). **Verbleibend, bevor tatsächlich eine echte E-Mail rausgeht:** `EMAIL_DELIVERY_ENABLED`/`EMAIL_PROVIDER_API_KEY`/`EMAIL_SENDER_ADDRESS`/`EMAIL_PROVIDER_WEBHOOK_SECRET` sind serverseitig standardmäßig nicht gesetzt (sicherer Default aus, siehe Abschnitt 7/Risiko 19/25) — ohne echten Resend-Account + verifizierte Absenderdomain bleibt der Kanal inaktiv und der Worker verhält sich weiterhin wie in Slice 6 (nur kanonischer Dashboard-Eintrag) |
+| Automatisierte Follow-ups | 🟡 PARTIAL (2026-08-08/09, Slice 5 „Foundation" + Slice 6 „Production Scheduler" + Slice 7 „E-Mail Delivery Foundation" + Slice 8A „E-Mail Delivery Hardening" + Slice 8B „Inbound E-Mail Replies") | Engine + Scheduler + E-Mail-Kanal in **beide** Richtungen (Outbound inkl. Bounce/Complaint-Webhooks, Suppression, Retry/Backoff, echtem Unsubscribe; Inbound inkl. sicherer Conversation-Auflösung, Sender-Verifikation, Follow-up-Stopp bei echter Antwort) vollständig code-seitig fertig. **Scheduler operativ verifiziert** (echter `200` nach Korrektur von `CRON_SECRET`, siehe Risiko 14 — nicht mehr nur code-seitig). **Verbleibend, bevor tatsächlich eine echte E-Mail rausgeht/reinkommt:** `EMAIL_DELIVERY_ENABLED`/`EMAIL_PROVIDER_API_KEY`/`EMAIL_SENDER_ADDRESS`/`EMAIL_PROVIDER_WEBHOOK_SECRET`/`EMAIL_INBOUND_*` sind serverseitig standardmäßig nicht gesetzt (sicherer Default aus, siehe Abschnitt 7/Risiko 19/25/27) — ohne echten Resend-Account + verifizierte Domain (+ Inbound-MX-Record) bleibt der Kanal inaktiv und der Worker verhält sich weiterhin wie in Slice 6 (nur kanonischer Dashboard-Eintrag) |
 | DSGVO-Löschfristen | ⏳ PLANNED | `data-retention.ts` definiert Zielwerte (30 Tage Demo, 6–12 Monate ohne Abschluss) explizit als **noch nicht durchgesetzt** |
 | AI-Provider-Anbindung | ✅ DONE (aber nicht abstrahiert) | Direkt `@ai-sdk/anthropic` via Vercel AI SDK (`ai`-Package), kein Gateway/Abstraktionslayer — funktioniert, aber Wechsel des Modells/Anbieters erfordert Codeänderung an einer Stelle (`ai-gateway.server.ts`, aktuell nur ein dünner Wrapper) |
 | Agent/Widget-ID-Struktur (RE/MAX-Vorbereitung) | ⏳ PLANNED | Nur `company_id` existiert; `agent_id`/`widget_id` noch nicht im Schema — siehe Abschnitt 7 |
@@ -1204,6 +1204,136 @@ service-role-only-Ausnahme wie `admin_audit_log`), kein neues WARN.
 keine Resend-Credentials), `EMAIL_PROVIDER_WEBHOOK_SECRET` noch nicht in
 Production gesetzt, vollständige Inbound-E-Mail-Conversations.
 
+**Inbound E-Mail Replies (🟡 CODE FERTIG / LOKAL GEGEN ECHTE DB VERIFIZIERT,
+noch nicht live-provider-verifiziert, 2026-08-09, Slice 8B):** schließt
+Risiko 21 code-/DB-seitig — eine echte Lead-Antwort per E-Mail kann jetzt
+sicher einer bestehenden Conversation zugeordnet und als kanonische
+`sender_type='lead'`-Message gespeichert werden, statt nirgends
+anzukommen. Baut vollständig auf dem Slice-7/8A-Fundament auf
+(`EmailProvider`-Adapterkette, `verifyResendWebhook`,
+`email_webhook_events`), keine zweite parallele Infrastruktur.
+
+*Recherche zuerst (Aufgabenstellung Phase 1):* gegen Resends aktuelle
+Doku verifiziert, nicht aus Erinnerung übernommen. Das Inbound-Webhook-
+Payload (`email.received`) ist **nur Metadaten** (`email_id`, `from`,
+`to[]`, `attachments[]`-Metadaten, kein Body) — der tatsächliche Text-/
+HTML-Body muss separat per `GET https://api.resend.com/emails/receiving/
+{id}` abgerufen werden (neuer Client `resend-receiving.ts`, dieselbe
+transiente/permanente Fehlerklassifikation wie `resend-provider.ts`).
+Inbound nutzt denselben Svix-Mechanismus wie Outbound (`svix-id`/
+`-timestamp`/`-signature`), aber ein **eigenes** Signing-Secret
+(`EMAIL_INBOUND_WEBHOOK_SECRET` ≠ `EMAIL_PROVIDER_WEBHOOK_SECRET`) — ein
+eigener Resend-„Webhook"-Eintrag auf einer eigenen Route.
+
+*Reply-Adressierung:* `reply+<token>@<inboundDomain>` — Plus-Adressierung
+ist **kein** dokumentiertes Resend-Feature, sondern eine Konsequenz aus
+Standard-SMTP/RFC 5322 (Resend liefert die `to`-Adresse unverändert
+zurück, unabhängig vom Local-Part-Inhalt; MX-Records greifen nur auf
+Domain-Ebene) — im Code explizit so kommentiert, um keine erfundene
+Provider-Eigenschaft zu behaupten. Der Token ist ein deterministischer,
+serverseitig signierter HMAC (`reply-token.ts`, gleiches Muster wie
+`unsubscribe-token.ts`, aber ein **separates** Secret
+`EMAIL_INBOUND_TOKEN_SECRET` — unterschiedliche Autoritätsbereiche dürfen
+kein Secret teilen). Payload ist ausschließlich `{conversationId}` —
+**nie** `companyId` (Aufgabenstellung Phase 2 explizit) — `company_id`/
+`lead_id` werden nach Token-Verifikation immer serverseitig aus der
+`conversations`-Zeile neu abgeleitet, nie aus Token oder Request-Body
+übernommen. Kein Ablaufdatum (bewusst, wie beim Unsubscribe-Token);
+Rotation nur grobkörnig über das ganze Secret möglich — für v1 akzeptiert,
+kein Schema für Persistenz/Widerruf einzelner Tokens nötig.
+
+*Conversation Resolution + Sender-Verifikation:*
+`resolveInboundConversation` ist die **einzige** Stelle, an der ein
+Reply-Token zu einer Conversation/Company/Lead wird; das Webhook-Payload
+liefert `company_id`/`lead_id`/`conversation_id` nie als vertrauenswürdig.
+Ein gültiges Token allein genügt nicht — `inbound-sender.ts` vergleicht
+die eingehende `From`-Adresse case-insensitive gegen `leads.email` (Anzeige
+name wird sauber entfernt, letztes `<...>`-Paar gewinnt — relevant, weil
+ein manipulierter Anzeigename selbst ein `<` enthalten könnte). Fehlende
+Lead-E-Mail oder Mismatch → keine Message, kein Leak an den Absender.
+
+*Webhook-Endpoint:* `POST /api/internal/email/resend/inbound` — bewusst
+dünn (Signatur → Dedup → Orchestrierung in `inbound-webhook.functions.ts`
+→ Observability), keine Business-Logik im Route-Handler. Dedup direkt
+nach Signaturprüfung über dieselbe `email_webhook_events`-Tabelle wie
+Slice 8A (keine zweite Ledger-Tabelle, Aufgabenstellung Phase 7).
+Akzeptierter, dokumentierter Trade-off: identisch zu Slice 8A — ein
+transienter Fehler *nach* dem Dedup-Insert (z. B. Receiving-API 503) wird
+nicht durch eine Svix-Zustellwiederholung aufgefangen (Svix nutzt dieselbe
+`svix-id` erneut, die dann sofort als Duplikat erkannt wird) — bewusst in
+Kauf genommen für die härtere Garantie „dasselbe Event erzeugt nie zwei
+Messages", als `error`-`system_events` sichtbar statt eine falsche
+5xx-Retry-Erwartung zu wecken.
+
+*Content-Extraktion + Quote-Trimming:* Text-Body hat Vorrang, HTML wird
+nur bei fehlendem Text zu Plain-Text reduziert (Scripts/Styles/Tags
+entfernt, Entities dekodiert — kein HTML wird je als kanonische Message
+gespeichert). Quote-Trimming über die geprüfte Bibliothek
+`email-reply-parser` (MIT, keine Abhängigkeiten, aktiv gepflegt) statt
+selbstgebauter Regex-Heuristik (Aufgabenstellung: „keine riesige
+E-Mail-Parsing-Engine", aber auch „keine Erfindung aus dem Nichts") —
+degradiert konservativ auf reinen Text bei Nicht-Zitat-Inhalt. Leerer
+Inhalt nach Normalisierung → keine leere Message, sauber protokollierter
+Skip. Anhang-only-Mails (kein Text, aber `attachments.length > 0`)
+bekommen einen eigenen, ehrlichen `attachment_only_unsupported`-Zustand —
+kein Vortäuschen einer Verarbeitung, die nicht stattfand. Attachments
+selbst sind explizit **nicht** Teil dieses Slices.
+
+*Follow-up-Stopp + Closed-Conversation-Semantik:* nutzt denselben
+zentralen `handleFollowupsAfterMessages`-Kompositionspunkt wie jeder
+andere kanonische `'lead'`-Append (keine zweite Cancel-Implementierung) —
+eine echte E-Mail-Antwort hat damit exakt denselben Effekt wie eine
+Lead-Antwort über jeden anderen Kanal, inklusive bereits terminierter
+Retry-Follow-ups. Reopen einer `status='closed'`-Conversation bei echter
+Lead-Antwort wurde **nicht** blind entschieden, sondern zuerst
+recherchiert (Aufgabenstellung Phase 14): kein bestehender Codepfad setzt
+`status='closed'` je (grep über `src/lib/conversations/` und
+`src/lib/followups/`) — daher unkritisch implementiert, statt hier zu
+stoppen.
+
+*Suppression-Interaktion:* Outbound-Suppression und Inbound-Annahme sind
+bewusst getrennte Konzepte (Aufgabenstellung Phase 15) — ein zuvor
+abgemeldeter/gebouncter Lead kann trotzdem antworten, die Message wird
+angenommen, die Suppression bleibt unverändert bestehen, und es werden
+keine neuen Follow-ups reaktiviert (strukturell garantiert: ein reiner
+`'lead'`-Append löst nie `ensureFollowupsForConversation` aus).
+
+*Datenmodell:* **keine neue Migration** — `email_webhook_events` (Slice
+8A) wird unverändert für Inbound-Dedup wiederverwendet,
+`conversations.status` (bestehender Wertebereich `open`/`closed`)
+unverändert für Reopen. Einzige neue Env-Vars: `EMAIL_INBOUND_DOMAIN`,
+`EMAIL_INBOUND_TOKEN_SECRET`, `EMAIL_INBOUND_WEBHOOK_SECRET` — alle
+optional; fehlen sie, bleibt Outbound exakt wie in Slice 7/8A (statisches
+`EMAIL_REPLY_TO`), Inbound schlägt fehlgeschlossen mit 401 fehl
+(Aufgabenstellung Phase 21).
+
+*UI:* keine Codeänderung nötig (Aufgabenstellung Phase 17 verifiziert,
+nicht nur angenommen) — die bestehende Conversations-UI rendert
+`sender_type='lead'`-Messages bereits generisch über
+`{m.content}` in JSX (React-Auto-Escaping, kein
+`dangerouslySetInnerHTML`), unabhängig vom Herkunftskanal. Per
+Playwright-Regressionslauf (Szenario D) und dediziertem Integrationstest
+bestätigt.
+
+*Tests:* 12 neue Integrationsszenarien gegen die echte, verbundene
+Supabase-DB mit echten Svix-Signaturen (`email.resend.inbound.
+integration.test.ts`) — Happy Path (inkl. Follow-up-Stopp), Duplicate,
+Invalid Signature, Invalid Token, Cross-Tenant (manipuliertes Token-
+Payload bei wiederverwendeter Signatur), Sender Mismatch, Empty Content,
+HTML/XSS-Sicherheit, Pending-Retry-Stopp, Unsubscribed-Lead-Reply,
+Closed-Conversation-Reopen, zwei echte parallele Duplicate-Requests
+(`Promise.all`, race gegen den `email_webhook_events`-Unique-Constraint).
+Plus 61 neue Unit-Tests über die reinen Logikmodule (Token, Content-
+Extraktion, Sender-Verifikation, Payload-Parsing, Receiving-API-Client).
+Gesamte Suite (459 Tests, 31 Dateien) sowie der volle Playwright-Lauf
+grün.
+
+*Noch nicht Teil dieses Slices (Aufgabenstellung, explizit):* keine
+automatische KI-Antwort auf eingehende E-Mails, kein Attachment-Support,
+kein echter Live-Test gegen ein tatsächliches Resend-Konto/eine
+verifizierte Inbound-Domain — siehe Risiko 21/27 unten für den exakt
+verbleibenden operativen Rest.
+
 Für kommende Phasen wahrscheinlich nötig (grobe Skizze, vor Umsetzung im
 Detail zu planen):
 
@@ -1508,6 +1638,10 @@ Kriterien zurückführbar sein (siehe Beispiel in Phase C).
     (z. B. eine Subdomain von `estateai.de`) per DNS verifizieren,
     `EMAIL_PROVIDER_API_KEY`/`EMAIL_SENDER_ADDRESS` (+ optional
     `EMAIL_REPLY_TO`) in Vercel setzen, dann `EMAIL_DELIVERY_ENABLED=true`.
+    **Update Slice 8B:** derselbe fehlende Account/dieselbe fehlende
+    Domain blockiert jetzt zusätzlich Inbound (Risiko 21/27) —
+    `EMAIL_PROVIDER_API_KEY` wird auch für den Receiving-API-Abruf
+    wiederverwendet, kein separater Key nötig.
 20. **Kein Bounce-/Complaint-/Delivered-Webhook-Handling — ✅ GELÖST
     (2026-08-09, Slice 8A).** Resend liefert diese Events über Svix aus
     (verifiziert); der neue `/api/internal/email/resend/webhook`-Endpoint
@@ -1518,14 +1652,22 @@ Kriterien zurückführbar sein (siehe Beispiel in Phase C).
     gesetzt (kein Resend-Account vorhanden, siehe Risiko 19) und kein
     echter Resend-Webhook wurde je live zugestellt/verifiziert — nur
     gegen real signierte Testrequests (siehe Risiko 25).
-21. **Keine Inbound-Reply-Verarbeitung** (unverändert seit Slice 7, nicht
-    Teil von Slice 8A) — Resend unterstützt Inbound-E-Mail-Empfang
-    (`email.received`-Event, eigenes „Inbound"-Feature), aber eine
-    Lead-Antwort per E-Mail fließt weiterhin nirgends automatisch in
-    `conversations`/`messages` zurück und stoppt keine offenen
-    Follow-ups. Der `EMAIL_REPLY_TO`-Posteingang ist weiterhin nur ein
-    von Menschen überwachtes Postfach, keine automatisierte Pipeline.
-    Kandidat für Slice 8B (Inbound).
+21. **Keine Inbound-Reply-Verarbeitung — 🟡 CODE-/DB-SEITIG GELÖST, noch
+    nicht live-provider-verifiziert (2026-08-09, Slice 8B).** Eine echte
+    Lead-Antwort per E-Mail wird jetzt sicher aufgelöst (signierter
+    Reply-Token → `resolveInboundConversation` → Sender-Verifikation) und
+    als kanonische `sender_type='lead'`-Message gespeichert, stoppt offene
+    Follow-ups über denselben Pfad wie jeder andere Kanal, und kann eine
+    geschlossene Conversation wieder öffnen — siehe Abschnitt 7 für die
+    volle Architektur. Vollständig gegen die echte, verbundene Supabase-DB
+    mit echten Svix-Signaturen integrationsgetestet (12 Szenarien inkl.
+    Concurrent-Duplicate). **Ausdrücklich nicht als „live" zu verstehen**
+    (Aufgabenstellung Phase 23): kein tatsächliches Resend-Konto, keine
+    verifizierte Inbound-Domain, kein einziges echtes `email.received`-
+    Event je empfangen — der externe Rest ist identisch zu Risiko 19/25
+    (Account/Domain/Secrets fehlen weiterhin vollständig in Production)
+    plus zusätzlich ein MX-Record auf der gewählten Inbound-Subdomain.
+    Siehe Risiko 27 für den exakten verbleibenden externen Schritt.
 22. **Kein automatisiertes Retry/Backoff bei transienten Provider-
     Fehlern — ✅ GELÖST (2026-08-09, Slice 8A).** Ein Timeout/429/5xx
     schedult jetzt einen begrenzten Retry (max. 3 Versuche gesamt, 5/20
@@ -1569,10 +1711,62 @@ Kriterien zurückführbar sein (siehe Beispiel in Phase C).
     vorhanden — `@playwright/test`, `mermaid`, `postcss`, u. a., separat
     reproduziert). Serverseitig gebündelt, nicht im Client-Bundle
     (verifiziert).
+27. **Kein live-verifizierter Resend-Inbound** (neu, Slice 8B) — analog zu
+    Risiko 25, aber für den neuen Inbound-Pfad: vollständig gegen echte
+    Svix-Signaturen und die echte, verbundene DB integrationsgetestet,
+    aber kein tatsächliches Resend-Konto hat je ein echtes
+    `email.received`-Event zugestellt. Nötige externe Schritte vor
+    Aktivierung (zusätzlich zu Risiko 19/25): eine Inbound-Subdomain
+    wählen (z. B. `reply.estateai.de`, bewusst nicht die primäre
+    Versanddomain, um bestehenden Mailfluss nicht zu gefährden), im
+    Resend-Dashboard als „Receiving Domain" hinzufügen, den von Resend
+    vorgegebenen MX-Record (niedrigste Priorität) bei diesem DNS-Anbieter
+    setzen, einen zweiten Resend-Webhook-Endpoint auf
+    `https://<domain>/api/internal/email/resend/inbound` mit Event
+    `email.received` anlegen, `EMAIL_INBOUND_DOMAIN`/
+    `EMAIL_INBOUND_TOKEN_SECRET`/`EMAIL_INBOUND_WEBHOOK_SECRET` in Vercel
+    setzen. Ohne diese Schritte bleibt Inbound bewusst fehlgeschlossen
+    (401), Outbound unverändert unbeeinträchtigt.
+28. **Bekannte Grenzen der Inbound-Content-Verarbeitung** (neu, Slice 8B,
+    bewusst dokumentierte technische Schuld statt verschwiegen) —
+    (a) Attachments werden erkannt (`attachment_only_unsupported`-Zustand
+    bei anhang-only-Mails) aber nicht heruntergeladen/gespeichert, per
+    Aufgabenstellung explizit auf einen späteren Slice verschoben;
+    (b) Quote-Trimming über `email-reply-parser` degradiert bei rein aus
+    einem Zitat bestehendem Text konservativ (lässt im Zweifel eine
+    Kopfzeile wie „Am ... schrieb ..." stehen, statt eine Heuristik zu
+    riskieren, die echten Lead-Text mitentfernt) — bewusste Abwägung laut
+    Aufgabenstellung, kein Bug; (c) Weiterleitungen (Lead leitet eine
+    EstateAI-Mail an eine dritte Person weiter, die dann antwortet) sind
+    kein modelliertes Szenario — die `From`-Prüfung greift korrekt (fremde
+    Absenderadresse → `sender_mismatch`, keine Message), das ist aber ein
+    Fail-Closed-Nebeneffekt, keine bewusste Weiterleitungs-Unterstützung.
 
 ---
 
 ## 10. Empfehlung: nächster Schritt
+
+**Update 2026-08-09 (Product-Track-Slice 8B, „Inbound E-Mail Replies"):**
+schließt Risiko 21 code-/DB-seitig — eine echte Lead-Antwort per E-Mail
+wird jetzt sicher einer Conversation zugeordnet, als kanonische
+`sender_type='lead'`-Message gespeichert, stoppt offene Follow-ups und
+kann eine geschlossene Conversation reaktivieren. Siehe Abschnitt 7 für
+die volle Architektur, Risiko 21 (jetzt 🟡 statt offen) und die neuen
+Risiken 27/28 für den exakten verbleibenden externen Rest. **Ehrlicher
+Status, keine Übertreibung:** vollständig code-fertig und gegen die
+echte, verbundene Supabase-DB mit echten Svix-Signaturen
+integrationsgetestet (12 Szenarien) — aber **nicht live**, da weiterhin
+kein Resend-Konto/keine verifizierte Domain existiert (identisch zu
+Risiko 19/25, jetzt zusätzlich eine Inbound-MX-Konfiguration). Der
+E-Mail-Kanal ist damit jetzt in **beide** Richtungen vollständig gebaut
+und wartet auf denselben einen externen Schritt (Account + Domain), nicht
+mehr auf weiteren Code.
+
+Ausdrücklich **nicht** Teil dieses Slices (Aufgabenstellung, hart
+vorgegeben, hier zur Erinnerung dokumentiert statt später vergessen):
+keine automatische KI-Antwort auf eingehende E-Mails, kein
+Attachment-Support. Beides bewusst offen für einen künftigen, separat zu
+bestätigenden Slice — siehe „Konkreter nächster Schritt" unten.
 
 **Update 2026-08-09 (Engineering-Workflow-Hardening + Product-Track-
 Slice 8A, „E-Mail Delivery Hardening"):** zwei unabhängige Ergebnisse
@@ -1626,13 +1820,18 @@ explizit bestätigt:
 
 - Rechtstexte-Platzhalter
 - DSGVO-Löschjob-Durchsetzung
-- E-Mail-Kanal-Aktivierung (siehe Risiko 19/25) — Resend-Account anlegen,
-  Absenderdomain per DNS verifizieren, `EMAIL_PROVIDER_API_KEY`/
-  `EMAIL_SENDER_ADDRESS`/`EMAIL_REPLY_TO` in Vercel setzen, dann
-  `EMAIL_DELIVERY_ENABLED=true`; zusätzlich für Slice 8A: im
+- E-Mail-Kanal-Aktivierung, Outbound + Inbound (siehe Risiko 19/25/27) —
+  Resend-Account anlegen, Absenderdomain per DNS verifizieren,
+  `EMAIL_PROVIDER_API_KEY`/`EMAIL_SENDER_ADDRESS`/`EMAIL_REPLY_TO` in
+  Vercel setzen, dann `EMAIL_DELIVERY_ENABLED=true`; für Slice 8A: im
   Resend-Dashboard einen Webhook-Endpoint auf
   `/api/internal/email/resend/webhook` anlegen und das Signing-Secret als
-  `EMAIL_PROVIDER_WEBHOOK_SECRET` setzen — technisch vollständig
+  `EMAIL_PROVIDER_WEBHOOK_SECRET` setzen; zusätzlich für Slice 8B: eine
+  Inbound-Subdomain als Receiving Domain hinzufügen, den MX-Record
+  setzen, einen zweiten Webhook-Endpoint auf
+  `/api/internal/email/resend/inbound` (Event `email.received`) anlegen,
+  `EMAIL_INBOUND_DOMAIN`/`EMAIL_INBOUND_TOKEN_SECRET`/
+  `EMAIL_INBOUND_WEBHOOK_SECRET` setzen — technisch vollständig
   vorbereitet, aber bewusst nicht automatisiert (Secrets/Domain-
   Entscheidungen sind keine Dinge, die eine Session selbst festlegt)
 - `leads.status='termin'`-Dual-Source-Refactor (siehe Risiko 9) — technische
@@ -1644,18 +1843,28 @@ explizit bestätigt:
   Abschnitt 7) — kein akuter Blocker, die App liest die Legacy-Spalte
   bereits nirgends mehr
 
-**Konkreter nächster Schritt: Slice 8B — Inbound E-Mail Replies.** Mit
-Slice 8A ist die ausgehende Seite des E-Mail-Kanals jetzt robust
-(Zustellstatus, Suppression, Retry, Unsubscribe) — die einzige verbleibende
-strukturelle Lücke ist, dass der Kanal nur in eine Richtung „echt" ist.
-Slice 8B würde: eine echte Antwortadresse mit Inbound-Routing (Resend
-unterstützt das bereits, siehe Abschnitt 7), sichere Conversation-
-Auflösung, kanonische `sender_type='lead'`-Nachrichten aus echten
-E-Mail-Antworten, automatisches Stoppen offener Follow-ups bei einer
-echten Antwort, und eine Conversation-UI, die den echten E-Mail-Dialog
-zeigt — schließt Risiko 21. Setzt auf demselben Slice-7/8A-Fundament auf
-(Adapter-Architektur, `EmailProvider`-Interface, Resend-Wahl, das jetzt
-vorhandene Webhook-Framework für `email.received`).
+**Konkreter nächster Schritt — zwei gleichwertige Kandidaten, je nach
+Priorität von Jannik:**
+
+1. **Resend-Account/Domain-Aktivierung (kein Code-Slice, ein externer
+   Schritt).** Mit Slice 8B ist der gesamte E-Mail-Kanal — Outbound
+   *und* Inbound — vollständig code-fertig und getestet; der einzige
+   verbleibende Schritt, um Risiken 19/25/27 gleichzeitig zu schließen,
+   ist ein echtes Resend-Konto + eine per DNS verifizierte Domain +
+   MX-Record für die Inbound-Subdomain (siehe Risiko 19/27 für die exakte
+   Schrittliste). Höchster Hebel für den geringsten Aufwand: kein
+   weiterer Code nötig, nur Account/DNS/Vercel-Env-Vars.
+2. **Product-Track-Slice 8C — KI-Antwort auf eingehende E-Mails +
+   Attachment-Support.** Die von Slice 8B bewusst ausgeklammerten Teile
+   (siehe oben) — eine automatische KI-Antwort auf eine eingehende
+   Lead-E-Mail (nutzt dieselbe kanonische Message, dieselbe
+   `conversations`/`messages`-Struktur, vermutlich denselben
+   KI-Antwortpfad wie der Website-Chat) und Attachment-Download/-Anzeige
+   (Resends Inbound-Attachment-Metadaten sind bereits im Receiving-API-
+   Client vorhanden, nur der Download/die Speicherung fehlt). Baut direkt
+   auf Slice 8B auf, ist aber unabhängig von Kandidat 1 planbar (Tests
+   können weiterhin mit signierten Fixtures laufen, ohne echten
+   Provider).
 
 Diese Empfehlung wird hier **nicht automatisch umgesetzt** — das ist die
 nächste, separat zu bestätigende Aufgabe.

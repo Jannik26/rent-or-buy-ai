@@ -31,7 +31,11 @@ import {
 } from "@/lib/followups/followups.functions";
 import { createEmailDeliveryAdapter } from "@/lib/followups/email-delivery-adapter";
 import { createResendEmailProvider } from "@/lib/email/providers/resend-provider";
-import { isEmailDeliveryEnabled, resolveEmailProviderConfig } from "@/lib/email/email-rules";
+import {
+  isEmailDeliveryEnabled,
+  resolveEmailProviderConfig,
+  resolveInboundConfig,
+} from "@/lib/email/email-rules";
 
 /** Constant-time secret comparison — hashing both sides to a fixed 32-byte
  * digest first means `timingSafeEqual` never short-circuits on a length
@@ -87,6 +91,11 @@ export function selectFollowupDeliveryAdapter(env: {
   replyToAddress: string | undefined;
   appBaseUrl: string | undefined;
   unsubscribeSecret: string | undefined;
+  /** Product Track slice 8B — both optional (task Phase 21): missing either
+   * one means every send keeps using the static `replyToAddress` above,
+   * exactly as in slice 7/8A. Never required for email delivery to work. */
+  inboundDomain: string | undefined;
+  inboundTokenSecret: string | undefined;
 }): { adapter: FollowupDeliveryAdapter; mode: "email" | "canonical" } {
   if (isEmailDeliveryEnabled(env.emailDeliveryEnabledRaw)) {
     const providerConfig = resolveEmailProviderConfig({
@@ -98,6 +107,10 @@ export function selectFollowupDeliveryAdapter(env: {
     });
     if (providerConfig) {
       const provider = createResendEmailProvider(providerConfig.apiKey);
+      const inboundConfig = resolveInboundConfig({
+        inboundDomain: env.inboundDomain,
+        tokenSecret: env.inboundTokenSecret,
+      });
       const adapter = createEmailDeliveryAdapter({
         provider,
         senderConfig: {
@@ -106,6 +119,7 @@ export function selectFollowupDeliveryAdapter(env: {
         },
         appBaseUrl: providerConfig.appBaseUrl,
         unsubscribeSecret: providerConfig.unsubscribeSecret,
+        ...(inboundConfig ? { inboundConfig } : {}),
       });
       return { adapter, mode: "email" };
     }
@@ -179,6 +193,8 @@ export async function handleFollowupWorkerRequest(request: Request): Promise<Res
     replyToAddress: process.env.EMAIL_REPLY_TO,
     appBaseUrl: process.env.APP_BASE_URL,
     unsubscribeSecret: process.env.EMAIL_UNSUBSCRIBE_SECRET,
+    inboundDomain: process.env.EMAIL_INBOUND_DOMAIN,
+    inboundTokenSecret: process.env.EMAIL_INBOUND_TOKEN_SECRET,
   });
 
   try {

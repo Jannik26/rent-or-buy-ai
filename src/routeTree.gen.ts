@@ -32,6 +32,7 @@ import { Route as ApiPublicWidgetChatRouteImport } from './routes/api/public/wid
 import { Route as ApiPublicEmailUnsubscribeRouteImport } from './routes/api/public/email.unsubscribe'
 import { Route as ApiInternalFollowupsProcessRouteImport } from './routes/api/internal/followups.process'
 import { Route as ApiInternalEmailResendWebhookRouteImport } from './routes/api/internal/email.resend.webhook'
+import { Route as ApiInternalEmailResendInboundRouteImport } from './routes/api/internal/email.resend.inbound'
 
 const SitemapDotxmlRoute = SitemapDotxmlRouteImport.update({
   id: '/sitemap.xml',
@@ -153,6 +154,12 @@ const ApiInternalEmailResendWebhookRoute =
     path: '/api/internal/email/resend/webhook',
     getParentRoute: () => rootRouteImport,
   } as any)
+const ApiInternalEmailResendInboundRoute =
+  ApiInternalEmailResendInboundRouteImport.update({
+    id: '/api/internal/email/resend/inbound',
+    path: '/api/internal/email/resend/inbound',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -176,6 +183,7 @@ export interface FileRoutesByFullPath {
   '/api/internal/followups/process': typeof ApiInternalFollowupsProcessRoute
   '/api/public/email/unsubscribe': typeof ApiPublicEmailUnsubscribeRoute
   '/api/public/widget/chat': typeof ApiPublicWidgetChatRoute
+  '/api/internal/email/resend/inbound': typeof ApiInternalEmailResendInboundRoute
   '/api/internal/email/resend/webhook': typeof ApiInternalEmailResendWebhookRoute
 }
 export interface FileRoutesByTo {
@@ -200,6 +208,7 @@ export interface FileRoutesByTo {
   '/api/internal/followups/process': typeof ApiInternalFollowupsProcessRoute
   '/api/public/email/unsubscribe': typeof ApiPublicEmailUnsubscribeRoute
   '/api/public/widget/chat': typeof ApiPublicWidgetChatRoute
+  '/api/internal/email/resend/inbound': typeof ApiInternalEmailResendInboundRoute
   '/api/internal/email/resend/webhook': typeof ApiInternalEmailResendWebhookRoute
 }
 export interface FileRoutesById {
@@ -226,6 +235,7 @@ export interface FileRoutesById {
   '/api/internal/followups/process': typeof ApiInternalFollowupsProcessRoute
   '/api/public/email/unsubscribe': typeof ApiPublicEmailUnsubscribeRoute
   '/api/public/widget/chat': typeof ApiPublicWidgetChatRoute
+  '/api/internal/email/resend/inbound': typeof ApiInternalEmailResendInboundRoute
   '/api/internal/email/resend/webhook': typeof ApiInternalEmailResendWebhookRoute
 }
 export interface FileRouteTypes {
@@ -252,6 +262,7 @@ export interface FileRouteTypes {
     | '/api/internal/followups/process'
     | '/api/public/email/unsubscribe'
     | '/api/public/widget/chat'
+    | '/api/internal/email/resend/inbound'
     | '/api/internal/email/resend/webhook'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -276,6 +287,7 @@ export interface FileRouteTypes {
     | '/api/internal/followups/process'
     | '/api/public/email/unsubscribe'
     | '/api/public/widget/chat'
+    | '/api/internal/email/resend/inbound'
     | '/api/internal/email/resend/webhook'
   id:
     | '__root__'
@@ -301,6 +313,7 @@ export interface FileRouteTypes {
     | '/api/internal/followups/process'
     | '/api/public/email/unsubscribe'
     | '/api/public/widget/chat'
+    | '/api/internal/email/resend/inbound'
     | '/api/internal/email/resend/webhook'
   fileRoutesById: FileRoutesById
 }
@@ -318,6 +331,7 @@ export interface RootRouteChildren {
   ApiInternalFollowupsProcessRoute: typeof ApiInternalFollowupsProcessRoute
   ApiPublicEmailUnsubscribeRoute: typeof ApiPublicEmailUnsubscribeRoute
   ApiPublicWidgetChatRoute: typeof ApiPublicWidgetChatRoute
+  ApiInternalEmailResendInboundRoute: typeof ApiInternalEmailResendInboundRoute
   ApiInternalEmailResendWebhookRoute: typeof ApiInternalEmailResendWebhookRoute
 }
 
@@ -484,6 +498,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiInternalEmailResendWebhookRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/internal/email/resend/inbound': {
+      id: '/api/internal/email/resend/inbound'
+      path: '/api/internal/email/resend/inbound'
+      fullPath: '/api/internal/email/resend/inbound'
+      preLoaderRoute: typeof ApiInternalEmailResendInboundRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -528,6 +549,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiInternalFollowupsProcessRoute: ApiInternalFollowupsProcessRoute,
   ApiPublicEmailUnsubscribeRoute: ApiPublicEmailUnsubscribeRoute,
   ApiPublicWidgetChatRoute: ApiPublicWidgetChatRoute,
+  ApiInternalEmailResendInboundRoute: ApiInternalEmailResendInboundRoute,
   ApiInternalEmailResendWebhookRoute: ApiInternalEmailResendWebhookRoute,
 }
 export const routeTree = rootRouteImport

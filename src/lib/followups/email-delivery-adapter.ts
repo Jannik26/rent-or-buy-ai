@@ -68,9 +68,11 @@ import {
   resolveRecipientEmail,
   resolveSenderIdentity,
   type EmailSenderConfig,
+  type InboundConfig,
 } from "@/lib/email/email-rules";
 import type { EmailProvider } from "@/lib/email/email-provider";
 import { isSuppressed } from "@/lib/email/suppression";
+import { buildReplyAddress, signReplyToken } from "@/lib/email/reply-token";
 
 export type CreateEmailDeliveryAdapterArgs = {
   provider: EmailProvider;
@@ -81,12 +83,19 @@ export type CreateEmailDeliveryAdapterArgs = {
    * nothing" config check in the worker route. */
   appBaseUrl: string;
   unsubscribeSecret: string;
+  /** Product Track slice 8B — genuinely optional (task Phase 21): when
+   * absent, every send uses `senderConfig.replyToAddress` unchanged from
+   * slice 7/8A (no conversation-specific routing, no behavior change).
+   * When present, every send gets its own `reply+<token>@<inboundDomain>`
+   * address instead, so a lead's reply can be routed back to exactly this
+   * conversation (see email.resend.inbound.ts). */
+  inboundConfig?: InboundConfig;
 };
 
 export function createEmailDeliveryAdapter(
   args: CreateEmailDeliveryAdapterArgs,
 ): FollowupDeliveryAdapter {
-  const { provider, senderConfig, appBaseUrl, unsubscribeSecret } = args;
+  const { provider, senderConfig, appBaseUrl, unsubscribeSecret, inboundConfig } = args;
 
   return {
     async deliver(client: SupabaseClient<Database>, input): Promise<FollowupDeliveryResult> {
@@ -147,10 +156,24 @@ export function createEmailDeliveryAdapter(
         secret: unsubscribeSecret,
       });
 
+      // Conversation-specific Reply-To when inbound is configured (task
+      // Phase 3) — a lead replying to this exact address routes straight
+      // back to this conversation (see email.resend.inbound.ts). Falls
+      // back to the static, env-configured Reply-To otherwise, unchanged
+      // from slice 7/8A.
+      const replyTo = inboundConfig
+        ? {
+            email: buildReplyAddress(
+              signReplyToken({ conversationId: input.conversationId }, inboundConfig.tokenSecret),
+              inboundConfig.inboundDomain,
+            ),
+          }
+        : identity.replyTo;
+
       const sendResult = await provider.send({
         to: { email: recipient.email },
         from: identity.from,
-        replyTo: identity.replyTo,
+        replyTo,
         subject: generateSubject(input.step, companyName),
         text: renderPlainTextBody(input.step, companyName, unsubscribeUrl),
         html: renderHtmlBody(input.step, companyName, unsubscribeUrl),
