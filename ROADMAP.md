@@ -1,13 +1,15 @@
 # EstateAI — Roadmap & Architekturplan
 
-**Stand: 2026-08-09 · Korrekturrunde 1 + Product-Track-Slice 1
+**Stand: 2026-08-10 · Korrekturrunde 1 + Product-Track-Slice 1
 (Appointments) + Slice 2 (Analytics V1) + Slice 3 (Conversations V1) +
 Verification-Track-Slice 1 (persistierte Playwright-E2E-Basis) +
 Product-Track-Slice 4 (Conversations Foundation — kanonische
 Conversations-/Messages-Domain) + Slice 5 (Automated Lead Follow-ups
 Foundation) + Slice 6 (Production Follow-up Scheduler) + Slice 7
 (Production E-Mail Delivery Foundation) + Engineering-Workflow-Hardening
-(`estateai-engineering`-Skill) + Slice 8A (E-Mail Delivery Hardening) ·
+(`estateai-engineering`-Skill) + Slice 8A (E-Mail Delivery Hardening) +
+Slice 8B (Inbound E-Mail Replies) + E-Mail-Infrastructure-Live-Verification
+(2026-08-10, kein Code-Slice) ·
 Kanonisches Planungsdokument.**
 
 Dieses Dokument ersetzt `.lovable/plan.md` als laufende Roadmap. Es wird bei
@@ -1642,6 +1644,22 @@ Kriterien zurückführbar sein (siehe Beispiel in Phase C).
     Domain blockiert jetzt zusätzlich Inbound (Risiko 21/27) —
     `EMAIL_PROVIDER_API_KEY` wird auch für den Receiving-API-Abruf
     wiederverwendet, kein separater Key nötig.
+    **Update 2026-08-10 (E-Mail-Infrastructure-Live-Verification, kein
+    Code-Slice):** real geprüft, nicht mehr nur behauptet — weiterhin
+    **weiterhin offen**, unverändert zum obigen Stand. Konkret verifiziert
+    in dieser Session: `npx vercel env ls production` (authentifiziert
+    gegen das echte, verbundene Vercel-Team/-Projekt) zeigt ausschließlich
+    `CRON_SECRET`/`SUPABASE_*`/`VITE_SUPABASE_*`/`ANTHROPIC_API_KEY` — kein
+    einziger `EMAIL_*`-Name ist gesetzt, weder in Production noch Preview.
+    `npx vercel project` (`get_project`) zeigt für `rent-or-buy-ai`
+    ausschließlich `*.vercel.app`-Domains — keine einzige selbst
+    kontrollierte Domain ist an das Projekt angehängt. `.env`/`.env.example`
+    enthalten ebenfalls keinen `EMAIL_*`/`RESEND_*`-Eintrag. Auf explizite
+    Nachfrage hat der Auftraggeber bestätigt: **weder ein Resend-Account
+    noch eine selbst kontrollierte Domain existiert aktuell** — dieser
+    Schritt startet von Null. Das ist damit kein „vermutlich noch nicht
+    eingerichtet" mehr, sondern eine bestätigte Tatsache. Siehe Abschnitt
+    10 für die daraus resultierende, minimal nötige manuelle Schrittliste.
 20. **Kein Bounce-/Complaint-/Delivered-Webhook-Handling — ✅ GELÖST
     (2026-08-09, Slice 8A).** Resend liefert diese Events über Svix aus
     (verifiziert); der neue `/api/internal/email/resend/webhook`-Endpoint
@@ -1703,6 +1721,19 @@ Kriterien zurückführbar sein (siehe Beispiel in Phase C).
     `https://<domain>/api/internal/email/resend/webhook` anlegen, das dort
     generierte Signing-Secret als `EMAIL_PROVIDER_WEBHOOK_SECRET` in
     Vercel setzen.
+    **Update 2026-08-10 (E-Mail-Infrastructure-Live-Verification):**
+    weiterhin offen, unverändert — real per `vercel env ls` bestätigt
+    (siehe Risiko 19). Zusätzlich in dieser Session gegen Resends aktuelle
+    offizielle Doku (nicht aus Erinnerung) re-verifiziert, mit positivem
+    Befund: die Svix-Signaturprüfung per `svix`-Package
+    (`webhook-verification.ts`) entspricht exakt Resends aktuell
+    dokumentiertem Verifikationsweg; das `email.bounced`-Beispiel-Payload
+    aus der aktuellen Doku bestätigt `data.bounce.type === "Permanent"`
+    wortgleich zu unserer Klassifikation in `webhook-events.ts` (eine
+    andere, nur beiläufig gefundene Community-Quelle sprach von
+    „hard"/„soft" — das ist **keine** echte Payload-Feldbezeichnung,
+    sondern eine vereinfachende Paraphrase; die offizielle Beispiel-Payload
+    widerlegt das). Kein Korrekturbedarf am Code gefunden.
 26. **Neue Abhängigkeit: `svix`** (neu, Slice 8A) — für die
     Webhook-Signaturprüfung hinzugefügt (offizielles Package, von Resend
     selbst für Webhook-Zustellung genutzt). Zieht nur `standardwebhooks`
@@ -1727,6 +1758,28 @@ Kriterien zurückführbar sein (siehe Beispiel in Phase C).
     `EMAIL_INBOUND_TOKEN_SECRET`/`EMAIL_INBOUND_WEBHOOK_SECRET` in Vercel
     setzen. Ohne diese Schritte bleibt Inbound bewusst fehlgeschlossen
     (401), Outbound unverändert unbeeinträchtigt.
+    **Update 2026-08-10 (E-Mail-Infrastructure-Live-Verification):**
+    weiterhin offen, real bestätigt (kein Account, keine Domain — siehe
+    Risiko 19). **Eine echte Provider-Erleichterung gegenüber der
+    ursprünglichen Annahme oben, gegen Resends aktuelle Doku verifiziert:**
+    Resend bietet inzwischen eine von Resend selbst verwaltete
+    Receiving-Domain (`<zufälliger-name>.resend.app`) an — **ganz ohne
+    eigene Domain/DNS/MX-Record**, direkt nach Account-Erstellung nutzbar.
+    Das senkt die Hürde für den **Inbound**-Teil dieses Risikos
+    (`EMAIL_INBOUND_DOMAIN` könnte theoretisch sofort auf diese
+    Resend-verwaltete Domain zeigen, ohne die untenstehende
+    MX-Record-Arbeit). **Das ändert aber nichts am eigentlichen Blocker:**
+    Resends eigene Doku ist explizit, dass Senden ausschließlich über eine
+    selbst verifizierte Domain funktioniert („shared/public domains
+    werden nicht unterstützt") — Test A (echte Outbound-Mail mit
+    funktionierender `reply+<token>@<inboundDomain>`-Adresse) bleibt damit
+    in jedem Fall an eine echte, DNS-verifizierte Sendedomain gebunden, ganz
+    unabhängig davon, welche Receiving-Domain-Option für Inbound gewählt
+    wird. Der volle Ablauf aus der Aufgabenstellung (echte Outbound-Mail →
+    echter Reply → Resend Receiving → Webhook → Message) **kann ohne
+    mindestens eine selbst kontrollierte, verifizierte Domain nicht
+    nachgewiesen werden** — das ist der harte, bestätigte Blocker dieser
+    Session, siehe Abschnitt 10.
 28. **Bekannte Grenzen der Inbound-Content-Verarbeitung** (neu, Slice 8B,
     bewusst dokumentierte technische Schuld statt verschwiegen) —
     (a) Attachments werden erkannt (`attachment_only_unsupported`-Zustand
@@ -1745,6 +1798,109 @@ Kriterien zurückführbar sein (siehe Beispiel in Phase C).
 ---
 
 ## 10. Empfehlung: nächster Schritt
+
+**Update 2026-08-10 (E-Mail-Infrastructure-Live-Verification, zwischen
+Slice 8B und Slice 8C, kein Code-Slice, kein neuer Product-Slice):**
+Ziel dieser Session war ausschließlich, die seit Slice 7/8A/8B
+vollständig code-fertige Resend-Infrastruktur real gegen den Provider zu
+verifizieren. Ergebnis: **STOPP vor dem eigentlichen Live-Test** — die
+externen Voraussetzungen dafür existieren nicht, real bestätigt statt nur
+angenommen (siehe Risiken 19/25/27 oben für die einzelnen Befunde).
+
+*Was real geprüft wurde (nicht nur wiederholt behauptet):*
+- `git`-Preflight: `main`, `HEAD 6feb004`, identisch zu
+  `origin/main`, kein Drift, saubere Arbeitskopie — vor jeder Änderung
+  bestätigt.
+- Architektur erneut gegen den tatsächlichen Code gelesen (nicht nur
+  gegen den Slice-8B-Bericht): `resend-provider.ts`, `resend-receiving.ts`,
+  `webhook-verification.ts`, `reply-token.ts`, `inbound-sender.ts`,
+  `inbound-resolution.ts`, `inbound-webhook.functions.ts`,
+  `email.resend.inbound.ts`, `email.resend.webhook.ts`, `email-rules.ts`,
+  `vercel.json` — Befund deckt sich vollständig mit der Slice-8A/8B-
+  Dokumentation, keine Abweichung zwischen Code und ROADMAP gefunden.
+- Resends aktuelle offizielle Doku (nicht aus Erinnerung) für Sending-
+  Domain-Setup, Receiving-Domain-Setup/MX, Webhooks/Event-Typen,
+  `GET /emails/receiving/{id}` und die `email.bounced`-Beispiel-Payload
+  gegen unseren Code abgeglichen — siehe Risiko 25/27 für die zwei
+  konkreten Befunde (Bounce-Feld bestätigt korrekt; neue
+  `<id>.resend.app`-Receiving-Option ohne eigene Domain identifiziert).
+  Kein Korrekturbedarf am Code.
+- Vercel-Projektzustand real abgefragt (nicht angenommen): Team
+  `jannik-estateai`, Projekt `rent-or-buy-ai`
+  (`prj_WBPzx7GtgDPADiNxY3cWFclZGlRs`), aktuelles Production-Deployment
+  `READY`. `npx vercel env ls production` zeigt **keine** `EMAIL_*`-Variable
+  — nur die bereits aus Slice 6/7 bekannten `CRON_SECRET`/`SUPABASE_*`/
+  `ANTHROPIC_API_KEY`. Domains am Projekt: ausschließlich `*.vercel.app` —
+  keine selbst kontrollierte Domain vorhanden.
+- Auf explizite Rückfrage vom Auftraggeber bestätigt: **kein Resend-
+  Account, keine selbst kontrollierte Domain** — von Null zu starten.
+- Vollständige Testsuite real erneut ausgeführt (nicht nur zitiert):
+  Unit- und Integrationstests inkl. Slice-7/8A/8B-Suiten **gegen die echte,
+  verbundene Supabase-DB** — 459/459 grün (31 Dateien, identisch zur
+  Slice-8B-Zahl). Typecheck (`tsc --noEmit`) sauber. Production-Build
+  (`vite build`) erfolgreich. Playwright — 12/12 grün, inklusive des
+  bereits aus Risiko 11 bekannten, gefilterten dev-only Mount-Race-
+  Konsolenfehlers (keine neue Regression). Lint zeigt 487 vorbestehende,
+  ausschließlich formatierungsbezogene `prettier/prettier`-Findings über
+  viele, größtenteils nicht E-Mail-bezogene Dateien (u. a. `auth.tsx`,
+  `datenschutz.tsx`, `vite.config.ts`) — reproduziert bei unverändertem
+  Arbeitsstand (diese Session hat keine einzige Zeile Code geändert), also
+  per Definition vorbestehend, keine Regression dieser Session; nicht
+  behoben, da außerhalb des Auftragsumfangs dieses reinen
+  Infrastruktur-Schritts (keine unrelated Refactorings).
+- Kein Code oder Migration in dieser Session verändert — Grund: die
+  vorherige Prüfung ergab keinen Korrekturbedarf, nur diese ROADMAP-
+  Aktualisierung.
+
+*Minimal nötige manuelle Schritte, bevor Slice 8C sinnvoll ist (in dieser
+Reihenfolge, jeweils einmalig):*
+1. **Domain wählen und registrieren** (Auftraggeber-Entscheidung, nicht
+   automatisiert — Domainkauf ist eine bezahlte, kaum rückgängig zu
+   machende Verpflichtung). Muss **nicht** die endgültige Marken-Domain
+   sein (Markenname bewegt sich laut Auftraggeber aktuell Richtung
+   „Soravelle Row", `estateai.de` ist ausdrücklich nicht als vorhanden
+   vorauszusetzen) — für den reinen Infrastruktur-Nachweis reicht jede
+   günstige, selbst kontrollierte Domain, deren DNS Jannik verwalten kann.
+2. **Resend-Account anlegen** (kostenloser Tarif reicht für diesen
+   Nachweis).
+3. Im Resend-Dashboard die Domain als **Sending Domain** hinzufügen,
+   empfohlen als Subdomain (z. B. `mail.<domain>`) statt Root-Domain; die
+   dort angezeigten DKIM-/SPF-(TXT)-Records beim DNS-Provider der Domain
+   eintragen; auf Verifikation warten (laut Resend meist ~15 Min., bis zu
+   72 Std. möglich).
+4. Für Inbound: entweder (a) die von Resend automatisch bereitgestellte
+   `<id>.resend.app`-Receiving-Domain direkt verwenden (kein DNS nötig,
+   neu identifiziert, siehe Risiko 27) — schnellster Weg für diesen reinen
+   Nachweis — oder (b) eine eigene Receiving-Subdomain (z. B.
+   `reply.<domain>`, bewusst nicht die Sending-Subdomain) im
+   Resend-Dashboard hinzufügen und den dort angezeigten MX-Record beim
+   DNS-Provider eintragen.
+5. Zwei getrennte Resend-Webhooks anlegen:
+   - Outbound-Status-Webhook → `https://rent-or-buy-ai.vercel.app/api/internal/email/resend/webhook`
+     (oder die künftige eigene Domain, sobald an Vercel angehängt), Events:
+     `email.sent`/`email.delivered`/`email.bounced`/`email.complained`/
+     `email.delivery_delayed`. Signing Secret notieren.
+   - Inbound-Webhook → `https://rent-or-buy-ai.vercel.app/api/internal/email/resend/inbound`,
+     Event: `email.received`. Eigenes, anderes Signing Secret notieren.
+6. Resend-API-Key erzeugen.
+7. Folgende Environment Variables in Vercel **Production** setzen (Werte
+   nie in Chat/Repo/Logs einfügen — direkt im Vercel-Dashboard oder per
+   `vercel env add <NAME> production` im eigenen Terminal eintragen):
+   `EMAIL_DELIVERY_ENABLED=true`, `EMAIL_PROVIDER_API_KEY`,
+   `EMAIL_SENDER_ADDRESS` (z. B. `follow-up@mail.<domain>`),
+   `EMAIL_REPLY_TO` (optional), `APP_BASE_URL` (die echte Produktions-URL,
+   für den Unsubscribe-Link), `EMAIL_UNSUBSCRIBE_SECRET` (neuer, zufällig
+   generierter Wert, z. B. `openssl rand -hex 32`),
+   `EMAIL_PROVIDER_WEBHOOK_SECRET` (aus Schritt 5, Outbound),
+   `EMAIL_INBOUND_DOMAIN` (aus Schritt 4), `EMAIL_INBOUND_TOKEN_SECRET`
+   (neuer, separater zufälliger Wert — nie identisch zu
+   `EMAIL_UNSUBSCRIBE_SECRET`), `EMAIL_INBOUND_WEBHOOK_SECRET` (aus
+   Schritt 5, Inbound).
+8. Danach erst ist der in der Aufgabenstellung geforderte reale Test
+   (echte Outbound-Mail → echter Reply → Resend Receiving → produktiver
+   Webhook → reale Conversation Message) überhaupt durchführbar — sobald
+   Schritt 1-7 stehen, kann eine Folgesession das ohne weiteren Code
+   direkt ausführen.
 
 **Update 2026-08-09 (Product-Track-Slice 8B, „Inbound E-Mail Replies"):**
 schließt Risiko 21 code-/DB-seitig — eine echte Lead-Antwort per E-Mail
