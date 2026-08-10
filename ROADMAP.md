@@ -1,6 +1,6 @@
 # EstateAI — Roadmap & Architekturplan
 
-**Stand: 2026-08-10 · Korrekturrunde 1 + Product-Track-Slice 1
+**Stand: 2026-08-11 · Korrekturrunde 1 + Product-Track-Slice 1
 (Appointments) + Slice 2 (Analytics V1) + Slice 3 (Conversations V1) +
 Verification-Track-Slice 1 (persistierte Playwright-E2E-Basis) +
 Product-Track-Slice 4 (Conversations Foundation — kanonische
@@ -9,7 +9,8 @@ Foundation) + Slice 6 (Production Follow-up Scheduler) + Slice 7
 (Production E-Mail Delivery Foundation) + Engineering-Workflow-Hardening
 (`estateai-engineering`-Skill) + Slice 8A (E-Mail Delivery Hardening) +
 Slice 8B (Inbound E-Mail Replies) + E-Mail-Infrastructure-Live-Verification
-(2026-08-10, kein Code-Slice) ·
+(2026-08-10, kein Code-Slice) + AI-Operations-Platform-Architecture-Slice
+(2026-08-11, kein Code-Slice, siehe Abschnitt 11) ·
 Kanonisches Planungsdokument.**
 
 Dieses Dokument ersetzt `.lovable/plan.md` als laufende Roadmap. Es wird bei
@@ -35,6 +36,7 @@ gekennzeichnet, wo es relevant ist.
 | `.lovable/plan.md` | Ursprünglicher Umbauplan „SetterAI → EstateAI MVP" (Lovable-Cloud-Sessionartefakt). Inhaltlich zu ~95 % umgesetzt (siehe Abschnitt 3). Als historisch markiert, nicht gelöscht. | historisch, superseded |
 | `AGENTS.md` | Lovable-Sync-Hinweis (History-Rewrite-Warnung). Unverändert. | aktiv |
 | `src/routes/README.md` | Technische Routing-Konvention (TanStack Start). Unverändert. | aktiv |
+| `docs/platform-modules.md` | Detail-Ebene zur AI-Operations-Platform-Erweiterung (Abschnitt 11): volle 10-Felder-Spezifikation je neuem Modul, Foundation-Katalog, HITL-Policy, Vendor-Strategie, Abhängigkeitsgraph. `ROADMAP.md` bleibt bei Widerspruch kanonisch. | aktiv, seit 2026-08-11 |
 | *(extern, anderer Branch)* `feature/grizzly-architect` | Shared-Grizzly-Technologie — **nicht** Teil dieses Repos/dieser Roadmap-Pflege, siehe Abschnitt 4. | existiert, extern gepflegt |
 
 Es existierte **keine** Datei namens Roadmap/Masterplan/Product-Vision/
@@ -48,6 +50,17 @@ neu angelegt.
 ---
 
 ## 1. Vision
+
+**Update 2026-08-11:** EstateAI wird nicht mehr nur als Immobilien-Lead-
+Chatbot bzw. schlanke Vertriebsplattform gedacht, sondern als
+**umfassende AI Operations Platform / AI Operating System für
+Immobilienmakler und Immobilienunternehmen** — eine Plattform, die
+zunehmend die gesamte operative Arbeit rund um Leads, Objekte, Termine,
+Kommunikation, Dokumente und Vermarktung übernimmt oder unterstützt, nicht
+nur den Erstkontakt qualifiziert. Funktionalität und messbarer
+geschäftlicher Nutzen haben Vorrang vor kosmetischem Ausbau. Die volle
+Modul-/Foundation-Planung dazu steht in Abschnitt 11 und
+`docs/platform-modules.md`.
 
 EstateAI wird nicht mehr nur als schlanker Lead-Chatbot für Makler gedacht,
 sondern schrittweise zu:
@@ -2024,3 +2037,117 @@ Priorität von Jannik:**
 
 Diese Empfehlung wird hier **nicht automatisch umgesetzt** — das ist die
 nächste, separat zu bestätigende Aufgabe.
+
+---
+
+## 11. AI Operations Platform — Erweiterung (2026-08-11, Product-/
+Architecture-Slice, kein Code-Slice)
+
+Auftrag: EstateAI nicht mehr nur als Immobilien-Lead-Chatbot, sondern als
+**AI Operations Platform / AI Operating System für Immobilienmakler**
+weiterzudenken — bei laufendem Produktbetrieb und unverändertem
+E-Mail-8C-Blocker (Abschnitt 10/Risiken 19/21/25/27). Volle
+10-Felder-Spezifikation je Modul, Foundation-Katalog, HITL-Policy,
+Vendor-Strategie und Abhängigkeitsgraph stehen in
+`docs/platform-modules.md` — hier nur die kanonische Kurzfassung.
+
+**Verifizierter Ausgangspunkt (gegen echten Code dieser Session geprüft,
+nicht aus altem Bericht übernommen):** `leads` hat ausschließlich
+Freitext-Objektfelder, **keine** `properties`-Tabelle — das ist die
+zentrale strukturelle Lücke für fast jedes neue Modul.
+`conversations`/`messages` sind bereits kanalfähig
+(`website`/`email`/`whatsapp`/`phone`) und sequenzgeordnet. Die
+Follow-up-Engine ist production-verifiziert und kanalunabhängig gebaut —
+gute Vorlage für weitere Automatisierung. Die AI-Anbindung
+(`ai-gateway.server.ts`) ist ein 2-Zeilen-Wrapper ohne Abstraktion, kein
+Prompt-Versioning, keine Kosten-Erfassung, kein Eval-Harness — heute bei 2
+AI-Aufrufen unkritisch, wird mit jedem neuen AI-Modul relevanter. Keine
+Storage-Buckets, keine Properties-/Documents-/Feedback-Tabellen, keine
+Vendor-Integration außer Supabase/Anthropic/Resend (Resend weiterhin live
+blockiert). Rollen/RLS/`system_events`/Billing-State-Machine sind
+durchgängig etabliert und für jedes neue Modul direkt wiederverwendbar.
+
+**Neu geplante Module** (volle Specs in `docs/platform-modules.md`
+Abschnitt 5): Property Domain Model, Property Matching, Feedback
+Intelligence, Makler Copilot, Adaptive Follow-ups, Appointment Agent,
+Listing Writer, Social Content, Viewing Feedback Assistant, Seller
+Updates, Price Assistant, Offer/Document Assistant, Document
+Intelligence, Workflow Builder (bewusst zurückgestellt, siehe unten),
+Management-Analytics-Erweiterung, Morning Brief/Ops Home, 3D/Virtual
+Property Tours, AI Property Tour Guide, Virtual Tour Analytics,
+Post-Tour Intelligence, Virtual Staging. AI Receptionist ist bei genauem
+Hinsehen keine neue Arbeit, sondern eine Positionierung von
+Website-Chat (fertig) + E-Mail (blockiert) + WhatsApp/Telefon (bereits
+Phase F) — kein doppelter Planungspunkt.
+
+**Gemeinsame Foundations — jetzt vs. bedarfsgetrieben später:**
+Property Domain Model und ein AI Action/Approval Model (Human-in-the-Loop,
+siehe unten) werden **zuerst** gebaut, weil sie von den meisten anderen
+Modulen gebraucht werden und mit minimalem Aufwand/Risiko additiv
+entstehen. Event-System und Audit werden **erweitert** (bestehende
+`system_events`/`admin_audit_log`), nicht neu gebaut. Task Model,
+Notification System, Document-Storage, Cost-Tracking, Prompt-Versioning,
+AI-Evaluation und Property Knowledge Base werden bewusst **nicht jetzt**
+vorab gebaut, sondern erst zusammen mit dem jeweils ersten echten
+Konsumenten — vermeidet spekulative Komplexität (CLAUDE.md-Grundsatz),
+volle Begründung je Foundation in `docs/platform-modules.md` Abschnitt 2.
+
+**Human-in-the-loop als Plattformprinzip:** vier Risikostufen (1
+automatisch erlaubt, 2 automatisch mit Audit, 3 Freigabe empfohlen/
+erforderlich, 4 niemals autonom) gelten ab jetzt für jedes AI-Modul, nicht
+nur E-Mail — jedes Modul im Katalog ist bereits einer Stufe zugeordnet.
+Zielschema `ai_actions` (noch nicht implementiert) in
+`docs/platform-modules.md` Abschnitt 3. Wichtiger Nebenbefund: ein
+autonomer E-Mail-Auto-Reply (Slice 8C) wäre strukturell ohnehin
+HITL-Tier 3 — der aktuelle externe Blocker (kein Resend-Account/keine
+Domain) ist nicht die einzige Hürde dafür, nur die derzeit härteste.
+
+**Vendor-/Adapterstrategie:** Prinzip unverändert — externe Dienste
+beschleunigen, aber Domainlogik/Datenhoheit/Permissions/Audit bleiben
+EstateAI-eigen (bewährt am E-Mail-Kanal: `EmailDeliveryAdapter` →
+`EmailProvider` → `ResendEmailProvider`). Empfehlung „Buy hinter Adapter"
+für 3D-Tours, WhatsApp, Voice, Documents/OCR, Calendar; „kein Eigenbau
+eines CRM", stattdessen Sync-Adapter für Makler mit vorhandenem CRM.
+**3D-Tour-Vendor-Auswahl ist eine bezahlte, kaum rückgängige Entscheidung
+und braucht Jannik's explizite Freigabe vor jeglicher Implementierung** —
+gleiche Vorsicht wie bei der Resend-Domain-Entscheidung (Abschnitt 10).
+
+**E-Mail-8C-Blocker — ausdrücklich unverändert:** Slice 8C bleibt
+blockiert bis real nachgewiesen: echte Outbound-Mail → echter Reply →
+Resend Receiving → produktiver Webhook → reale Conversation Message
+(Risiken 19/21/25/27). Nichts in diesem Architecture-Slice umgeht das;
+alle anderen Module oben sind davon unabhängig planbar.
+
+**Priorisierte Wellen-Reihenfolge** (volle Scoring-Tabelle in
+`docs/platform-modules.md` Abschnitt 7):
+
+| Wave | Inhalt |
+|---|---|
+| 0 | Property Domain Model, AI Action/Approval Model (Foundations) |
+| 1 | Property Matching V1, Feedback Intelligence, Makler Copilot V1 (parallelisierbar) |
+| 2 | Adaptive Follow-ups, Listing Writer + Social Content, Management-Analytics-Erweiterung |
+| 3 | Appointment Agent, Viewing Feedback Assistant, Seller Updates, Price Assistant, Document-Storage-Foundation + Offer/Document Assistant + Document Intelligence |
+| 4 | 3D/Virtual Tours → AI Tour Guide (+ Property Knowledge Base) → Tour Analytics → Post-Tour Intelligence; Virtual Staging parallel — **erst nach Vendor-Freigabe durch Jannik** |
+| 5 | Morning Brief/Ops Home, Workflow-Builder-Re-Evaluation |
+
+**Unmittelbar empfohlener nächster Slice: Property Domain Model +
+Property Matching V1** (zusammen, nicht getrennt) — höchster
+Fundament-Hebel im Katalog, kein externes Vendor-/Domain-Risiko, additive
+Migration nach etabliertem Muster, UND direkt sichtbarer Kundennutzen
+statt einer unsichtbaren reinen Daten-Migration. Volle 10-Felder-Spec in
+`docs/platform-modules.md` Abschnitte 5.1/5.2; Definition of Done im
+Abschlussbericht dieser Session.
+
+**Verbleibende Risiken dieser Erweiterung** (neu, nicht mit den
+E-Mail-Risiken 19–28 zu verwechseln — eigene Zählung, damit keine
+Kollision mit den bestehenden Risikonummern entsteht):
+
+29. **Property Domain Model dupliziert vorerst Daten mit `leads`-Freitextfeldern** — `object_desc`/`property_type`/`location` auf `leads` bleiben bestehen (kein Breaking Change), `leads.property_id` ist nullable. Migrationspfad von Freitext zu strukturierten Objekten ist bewusst nicht Teil dieses Architecture-Slices — im Implementierungs-Slice zu entscheiden (schrittweise Migration vs. dauerhaftes Nebeneinander).
+30. **AI Action/Approval Model wird als Zielschema geplant, aber nicht implementiert** — bis zum ersten Tier-3-Modul (voraussichtlich Makler Copilot) bleibt es Dokumentation. Risiko: falls ein künftiger Slice unter Zeitdruck ein Tier-3-Feature ohne dieses Modell baut, entsteht doch wieder eine Insel-Lösung — sollte bei jedem neuen AI-Modul explizit gegen dieses Dokument geprüft werden.
+31. **3D-Tour-Vendor-Entscheidung ist ein echter externer Blocker für Wave 4** — analog zur Resend-Domain-Entscheidung: kein Vendor ist heute ausgewählt oder beauftragt, das ist eine bewusste Entscheidungslücke, kein Versehen. Ohne Jannik's Freigabe kann Wave 4 nicht beginnen.
+32. **Priorisierung/Scoring in Abschnitt 7 von `docs/platform-modules.md` ist qualitativ (1–3-Skala), nicht datengetrieben** — es existieren noch keine echten Nutzungsdaten für die neuen Module (sie existieren noch nicht). Nach den ersten 2–3 umgesetzten Modulen sollte die Priorisierung mit echten Ergebnissen (Nutzung, Feedback aus 5.3) neu geprüft werden, statt blind der heutigen Reihenfolge zu folgen.
+33. **Workflow Builder bewusst nicht spezifiziert** — ein generisches Regelwerk auf Verdacht zu bauen widerspräche CLAUDE.md; Re-Evaluation erst nach mindestens 3 konkreten Automatisierungsmodulen (siehe `docs/platform-modules.md` 5.14).
+
+Diese Erweiterung wird hier **nicht automatisch umgesetzt** — Property
+Domain Model + Property Matching V1 ist die empfohlene, aber separat zu
+bestätigende nächste Implementierungsaufgabe.
