@@ -42,6 +42,11 @@ export const FIXTURE_IDS = {
   appointment: "e2e00002-0000-0000-0000-000000000001",
   conversationLeadConversation: "e2e00003-0000-0000-0000-000000000001",
   appointmentLeadConversation: "e2e00003-0000-0000-0000-000000000002",
+  // Product Track slice 9 (Property Domain Model + Property Matching V1) —
+  // deliberately matches conversationLead's kauf/3-Zimmer-Wohnung/Hamburg
+  // profile so the Lead Detail page's "Passende Immobilien" section has a
+  // real match to render in the E2E run, not an empty state.
+  property: "e2e00004-0000-0000-0000-000000000001",
 } as const;
 
 const CONVERSATION_LEAD_NAME = "E2E QA Fixture — Conversation Lead";
@@ -211,6 +216,33 @@ export async function seedFixtures(admin: SupabaseClient): Promise<void> {
     .update({ status: "termin" })
     .eq("id", FIXTURE_IDS.appointmentLead);
   if (statusError) throw new Error(`seedFixtures: lead status sync failed: ${statusError.message}`);
+
+  // Property Domain Model fixture (Product Track slice 9) — one active
+  // property the conversationLead fixture (kauf, 3-Zimmer-Wohnung,
+  // Hamburg) matches well, so both /properties and the Lead Detail
+  // "Passende Immobilien" section have real data to render.
+  const { error: propertyError } = await admin.from("properties").upsert(
+    [
+      {
+        id: FIXTURE_IDS.property,
+        company_id: QA_COMPANY_ID,
+        title: "E2E QA Fixture — 3-Zimmer-Wohnung Hamburg",
+        status: "active",
+        marketing_type: "kauf",
+        price: 420_000,
+        property_type: "wohnung",
+        postal_code: "20095",
+        city: "Hamburg",
+        country: "DE",
+        living_area_m2: 85,
+        rooms: 3,
+        has_balcony: true,
+      },
+    ],
+    { onConflict: "id" },
+  );
+  if (propertyError)
+    throw new Error(`seedFixtures: property upsert failed: ${propertyError.message}`);
 }
 
 export async function cleanupFixtures(admin: SupabaseClient): Promise<void> {
@@ -235,4 +267,5 @@ export async function cleanupFixtures(admin: SupabaseClient): Promise<void> {
   await admin.from("appointments").delete().eq("id", FIXTURE_IDS.appointment);
   await admin.from("leads").delete().eq("id", FIXTURE_IDS.conversationLead);
   await admin.from("leads").delete().eq("id", FIXTURE_IDS.appointmentLead);
+  await admin.from("properties").delete().eq("id", FIXTURE_IDS.property);
 }

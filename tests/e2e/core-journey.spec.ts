@@ -114,6 +114,26 @@ test.describe("Core journey (authenticated as the QA/E2E test tenant)", () => {
     expect(errors, `console errors on lead detail: ${errors.join("\n")}`).toEqual([]);
   });
 
+  test("C3: lead detail shows Passende Immobilien with the fixture property matched", async ({
+    page,
+  }) => {
+    // Product Track slice 9 — conversationLead (kauf, 3-Zimmer-Wohnung,
+    // Hamburg) and the fixture property (kauf, Wohnung, 3 Zimmer, Hamburg)
+    // are seeded to match strongly (see fixtures-data.ts), so this proves
+    // the whole real pipeline: lead read -> preference extraction ->
+    // matching engine -> UI, against real seeded data, not a mock.
+    const errors = trackConsoleErrors(page);
+    await page.goto(`/leads/${FIXTURE_IDS.conversationLead}`);
+    await expect(page.getByText("Passende Immobilien")).toBeVisible();
+    await expect(page.getByText("E2E QA Fixture — 3-Zimmer-Wohnung Hamburg")).toBeVisible();
+    await expect(page.getByText(/% Match/)).toBeVisible();
+    // Explainability: at least one concrete ✓ reason is rendered, not just
+    // a bare score.
+    await expect(page.getByText("✓", { exact: true }).first()).toBeVisible();
+
+    expect(errors, `console errors on lead detail matches: ${errors.join("\n")}`).toEqual([]);
+  });
+
   test("D: conversations page shows real message history, search and a filter work", async ({
     page,
   }) => {
@@ -252,12 +272,31 @@ test.describe("Core journey (authenticated as the QA/E2E test tenant)", () => {
     expect(errors, `console errors on /analytics: ${errors.join("\n")}`).toEqual([]);
   });
 
+  test("H: properties page shows the fixture property, and property detail opens", async ({
+    page,
+  }) => {
+    const errors = trackConsoleErrors(page);
+    await page.goto("/properties");
+    await expect(page.getByRole("heading", { name: "Immobilien" })).toBeVisible();
+    await expect(page.getByText("E2E QA Fixture — 3-Zimmer-Wohnung Hamburg")).toBeVisible();
+
+    await page.getByText("E2E QA Fixture — 3-Zimmer-Wohnung Hamburg").click();
+    await expect(page).toHaveURL(new RegExp(FIXTURE_IDS.property));
+    await expect(
+      page.getByRole("heading", { name: "E2E QA Fixture — 3-Zimmer-Wohnung Hamburg" }),
+    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Bearbeiten" })).toBeVisible();
+
+    expect(errors, `console errors on /properties: ${errors.join("\n")}`).toEqual([]);
+  });
+
   test("G: primary navigation moves cleanly between every core section", async ({ page }) => {
     const errors = trackConsoleErrors(page);
     await page.goto("/dashboard");
 
     const steps: [string, string][] = [
       ["Leads", "Leads"],
+      ["Immobilien", "Immobilien"],
       ["Conversations", "Conversations"],
       ["Appointments", "Appointments"],
       ["Analytics", "Analytics"],

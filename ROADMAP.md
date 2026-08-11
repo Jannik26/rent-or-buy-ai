@@ -10,7 +10,8 @@ Foundation) + Slice 6 (Production Follow-up Scheduler) + Slice 7
 (`estateai-engineering`-Skill) + Slice 8A (E-Mail Delivery Hardening) +
 Slice 8B (Inbound E-Mail Replies) + E-Mail-Infrastructure-Live-Verification
 (2026-08-10, kein Code-Slice) + AI-Operations-Platform-Architecture-Slice
-(2026-08-11, kein Code-Slice, siehe Abschnitt 11) ·
+(2026-08-11, kein Code-Slice, siehe Abschnitt 11) + Slice 9 (Property
+Domain Model + Property Matching V1, 2026-08-11) ·
 Kanonisches Planungsdokument.**
 
 Dieses Dokument ersetzt `.lovable/plan.md` als laufende Roadmap. Es wird bei
@@ -131,6 +132,8 @@ Branch/Kontext; **Integration in EstateAI selbst** ist PLANNED)
 | Analytics-Dashboard | ✅ DONE (2026-08-07, Product-Track-Slice 2, „Analytics V1") | Echte, tenant-isolierte Kennzahlen statt Platzhalter: Lead-/Termin-KPIs, Zeitfilter (7/30/90 Tage/gesamt), Trends ggü. Vorperiode, 3-stufiger Funnel, Status-/Score-Verteilung, Tagesverläufe (nur für endliche Zeitfenster). Serverseitige Aggregation über eine RLS-gebundene `SECURITY INVOKER`-SQL-Funktion (`analytics_summary`, kein `company_id`-Parameter — Tenant-Isolation entsteht ausschließlich durch RLS), keine PII in der Antwort. `leads.status='termin'` ohne echten Termin wird bewusst **nicht** in „Aktive Termine"/Conversion mitgezählt, sondern separat als Altbestand ausgewiesen (siehe Abschnitt 9, Punkt 9). 12 SQL-Korrektheits-/RLS-Assertions gegen die echte DB (`supabase/tests/analytics_rls.sql`), 22 Unit-Tests für die reinen Kennzahl-Regeln |
 | E2E-Testinfrastruktur (Playwright) | ✅ DONE (2026-08-08, Verification-Track-Slice 1) | `tests/e2e/` — Core-Journey-Suite (Auth-Guard, Dashboard, Leads inkl. Tenant-Isolation, Conversations, Appointments inkl. Storno-/Wiederherstell-Lifecycle, Analytics inkl. Zeitfensterwechsel, Navigation) + ein Mobile-Smoke-Test. Dedizierter QA-Mandant, deterministische/idempotente Fixtures per fixer ID, Auth per Admin-generiertem Magic-Link + `storageState` (kein neuer Signup). 10/10 grün, dreifach reproduzierbar. Ergänzt, ersetzt nicht, die bestehenden SQL-RLS-Tests. Version gepinnt auf `1.45.0` wegen macOS-Ventura-Browser-Binary-Inkompatibilität neuerer Playwright-Versionen auf dieser Entwicklungsmaschine |
 | Automatisierte Follow-ups | 🟡 PARTIAL (2026-08-08/09, Slice 5 „Foundation" + Slice 6 „Production Scheduler" + Slice 7 „E-Mail Delivery Foundation" + Slice 8A „E-Mail Delivery Hardening" + Slice 8B „Inbound E-Mail Replies") | Engine + Scheduler + E-Mail-Kanal in **beide** Richtungen (Outbound inkl. Bounce/Complaint-Webhooks, Suppression, Retry/Backoff, echtem Unsubscribe; Inbound inkl. sicherer Conversation-Auflösung, Sender-Verifikation, Follow-up-Stopp bei echter Antwort) vollständig code-seitig fertig. **Scheduler operativ verifiziert** (echter `200` nach Korrektur von `CRON_SECRET`, siehe Risiko 14 — nicht mehr nur code-seitig). **Verbleibend, bevor tatsächlich eine echte E-Mail rausgeht/reinkommt:** `EMAIL_DELIVERY_ENABLED`/`EMAIL_PROVIDER_API_KEY`/`EMAIL_SENDER_ADDRESS`/`EMAIL_PROVIDER_WEBHOOK_SECRET`/`EMAIL_INBOUND_*` sind serverseitig standardmäßig nicht gesetzt (sicherer Default aus, siehe Abschnitt 7/Risiko 19/25/27) — ohne echten Resend-Account + verifizierte Domain (+ Inbound-MX-Record) bleibt der Kanal inaktiv und der Worker verhält sich weiterhin wie in Slice 6 (nur kanonischer Dashboard-Eintrag) |
+| Property Domain Model | ✅ DONE (2026-08-11, Slice 9) | Kanonische `properties`-Tabelle (Identität/Vermarktung/Lage/Kerndaten/Ausstattung/Beschreibung), company-scoped RLS analog `appointments`, `company_id` serverseitig per Trigger aus dem authentifizierten Nutzer abgeleitet. Bewusst **kein** `leads.property_id` (kein gespeicherter Link — Matching berechnet zur Anfragezeit, siehe Abschnitt 7). Ersetzt **nicht** die Freitextfelder auf `leads` — beide bleiben bewusst getrennte Wahrheiten (Objektbestand vs. Lead-Suchprofil), siehe Risiko 29 |
+| Property Matching V1 | ✅ DONE (2026-08-11, Slice 9) | Deterministische, erklärbare Matching-Engine (`src/lib/matching/`) — kein LLM, jeder Score aus einzelnen ✓/△/✕-Gründen rekonstruierbar. Lead-Detail-Seite zeigt „Passende Immobilien" mit Score + Begründung, Empty States (keine Objekte/kein ausreichender Match/zu wenig Suchkriterien) |
 | DSGVO-Löschfristen | ⏳ PLANNED | `data-retention.ts` definiert Zielwerte (30 Tage Demo, 6–12 Monate ohne Abschluss) explizit als **noch nicht durchgesetzt** |
 | AI-Provider-Anbindung | ✅ DONE (aber nicht abstrahiert) | Direkt `@ai-sdk/anthropic` via Vercel AI SDK (`ai`-Package), kein Gateway/Abstraktionslayer — funktioniert, aber Wechsel des Modells/Anbieters erfordert Codeänderung an einer Stelle (`ai-gateway.server.ts`, aktuell nur ein dünner Wrapper) |
 | Agent/Widget-ID-Struktur (RE/MAX-Vorbereitung) | ⏳ PLANNED | Nur `company_id` existiert; `agent_id`/`widget_id` noch nicht im Schema — siehe Abschnitt 7 |
@@ -1349,6 +1352,151 @@ kein echter Live-Test gegen ein tatsächliches Resend-Konto/eine
 verifizierte Inbound-Domain — siehe Risiko 21/27 unten für den exakt
 verbleibenden operativen Rest.
 
+**Property Domain Model + Property Matching V1 (✅ DONE, 2026-08-11,
+Product-Track-Slice 9):** erster kanonischer Immobilienbestand für
+EstateAI und die im Architecture-Slice (Abschnitt 11) empfohlene, aus
+`docs/platform-modules.md` Abschnitten 5.1/5.2 abgeleitete Umsetzung —
+volle Spec dort, hier die Implementierungs-Zusammenfassung inkl. der
+Punkte, an denen die reale Umsetzung von der ursprünglichen Planung
+abweicht oder sie präzisiert.
+
+*Reale-Daten-Untersuchung zuerst (Aufgabenstellung Phase 2):* gegen das
+echte, verbundene Projekt geprüft, nicht angenommen — 23 Leads insgesamt,
+`property_type` in 11/23 gepflegt, `location` in 10/23, `budget` nur in
+4/23, `asking_price` in 0/23. Format-Inspektion der `budget`-Werte zeigte
+sowohl deutsche Tausenderpunkt-Schreibweise ("4.500.000 €", "500.000 €")
+als auch einen bloßen Integer-String ("400000") als auch einen
+Mietpreis-Wert mit angehängtem Wort ("550 Euro Kaltmiete") — **in
+derselben Spalte, unabhängig vom Intent**. Ergebnis: **keine** automatische
+Migration von Freitext in strukturierte Felder (Aufgabenstellung explizit:
+„keine aggressive automatische Migration unsicherer Freitextdaten") —
+`properties` startet leer, Makler pflegt Objekte ab jetzt aktiv.
+
+*Schema:* additive Migration `20260811111022_add_properties_table.sql` —
+neue `properties`-Tabelle (Identität/Vermarktung/Lage/Kerndaten/
+Ausstattung/Beschreibung, siehe Abschnitt 2 für die Feldliste), `text` +
+`CHECK` statt Postgres-Enum für `status`/`marketing_type`/`property_type`
+(bewusst die *neuere* Repo-Konvention aus `appointments.status`/
+`companies.subscription_status`, nicht die ältere `lead_intent`-Enum —
+eine `CHECK`-Erweiterung braucht keine zweite Transaktion). RLS
+vier-Policy-Muster identisch zu `appointments` (owner-scoped, kein
+anon-Zugriff). `company_id` wird per `BEFORE INSERT OR UPDATE OF
+company_id`-Trigger (`tg_set_property_company`) serverseitig aus dem
+authentifizierten Aufrufer abgeleitet — anders als bei `appointments`
+(dort aus dem referenzierten Lead abgeleitet) gibt es bei einer Property
+keine natürliche Referenz, also direkt aus `auth.uid() -> companies.
+owner_id`. **Bewusst kein `leads.property_id`** — abweichend von der
+Planungsskizze in `docs/platform-modules.md` 5.1, die das als „optional,
+kann später ergänzt werden" vorsah: die Aufgabenstellung selbst verlangte
+keinen gespeicherten Link, und Matching berechnet ohnehin zur Anfragezeit
+über die volle Objektliste — ein gespeicherter Link wäre eine ungenutzte
+Spalte gewesen (YAGNI, siehe auch Abschnitt 11 „bedarfsgetrieben, nicht
+spekulativ").
+
+*Trigger-Härtung nach echtem Live-Befund (nicht vorab geplant):* die
+Security-Advisor-Prüfung direkt nach dem Anwenden der Migration zeigte
+zwei neue WARN (`tg_set_property_company` von `anon`/`authenticated` per
+PostgREST-RPC aufrufbar) — durch `20260811111048_revoke_property_
+trigger_function_execute.sql` behoben, exakt das bereits etablierte
+Zwei-Schritt-`REVOKE`-Muster aus den Slice-1/Vorgänger-Migrationen für
+`tg_set_appointment_company`. Beim Schreiben der echten DB-
+Integrationstests (unten) zeigte sich zusätzlich, dass der ursprüngliche
+Trigger für einen `service_role`-Aufrufer (kein `auth.uid()`) immer mit
+„kein Unternehmen gefunden" fehlschlug — durch `20260811113457_
+properties_trigger_trust_service_role.sql` korrigiert: der Trigger
+überschreibt `company_id` nur noch, wenn `auth.uid()` tatsächlich auflöst
+(echter authentifizierter Makler); ist es `NULL` (service_role-Kontext),
+bleibt der übergebene Wert unangetastet — `service_role` umgeht RLS
+ohnehin plattformweit bereits vollständig (gleiche Vertrauensgrenze wie
+beim Widget-Endpoint/Follow-up-Worker/E-Mail-Webhooks), kein neues
+Sicherheitsloch. Nach der Korrektur erneut alle 16 RLS-Assertions grün
+(`supabase/tests/properties_rls.sql`, gegen das echte Projekt ausgeführt).
+
+*Lead Preference Model (Aufgabenstellung Phase 7):* `src/lib/matching/
+lead-preferences.ts` ist der **einzige** Lesepfad für Matching-Kriterien
+eines Leads — keine zweite Datenquelle. Nur `kauf`/`miete`-Intents sind
+„applicable" (ein `verkauf`/`bewertung`-Lead ist Verkäufer, kein
+Objektsuchender — Matching für ihn ist keine fehlende Funktion, sondern
+ein Kategoriefehler). Konservative, rein syntaktische Parser (nie
+semantisches Raten): `parseBudgetToNumber` (deutsche Tausenderpunkt-/
+Dezimalkomma-Erkennung, verifiziert gegen die real beobachteten Formate
+oben), `parsePropertyType` (Keyword-Abgleich gegen dasselbe kontrollierte
+Vokabular wie `properties.property_type`), `parseMinRooms` (Regex an das
+Wort „Zimmer" gebunden, keine freie Zahlenerkennung). **Bewusster
+Scope-Cut, nicht in der ursprünglichen Planung explizit benannt:**
+Ausstattungsmerkmale (Balkon/Garten/…) werden für Leads **nicht**
+extrahiert — kein Lead-Feld liefert dafür heute eine zuverlässige Quelle
+(`object_desc` nur in 3/23 Leads, freier Text ohne Vokabular); ein
+Keyword-Matcher darüber wäre genau die Art unzuverlässiger Inferenz, vor
+der die Aufgabenstellung explizit warnt. Kriterien bleiben `"unknown"`,
+nie erfunden.
+
+*Matching Engine (Aufgabenstellung Phase 8-10):* `src/lib/matching/
+matching-rules.ts`, rein, deterministisch, kein LLM-Aufruf. Fünf
+gleichgewichtete Kriterien (je 20 Punkte): `transactionType` und `budget`
+als **Hard Constraints** (disqualifizieren eine Property vollständig,
+erscheinen nie als niedriger Score), `location`/`propertyType`/`rooms`
+als **Preferences** (beeinflussen den Score, disqualifizieren nie).
+Unbekannte Kriterien werden aus Zähler *und* Nenner entfernt (nie als 0
+gewertet) — ein Lead mit nur 2 von 5 bekannten, beide passenden Kriterien
+bekommt weiterhin 100 %, nicht 40 %. `rooms` erlaubt Teilerfüllung (△,
+Aufgabenstellungs-Beispiel „4 gesucht → 3,5 vorhanden"). Nur `status =
+'active'`-Objekte sind matchbar (`MATCHABLE_PROPERTY_STATUSES`) — eine in
+der Planungsskizze nicht explizit benannte, hier bewusst getroffene
+Entscheidung: `draft` ist noch nicht vorzeigbar, `reserved`/`sold`/
+`rented`/`archived` nicht mehr verfügbar. Deterministische Sortierung:
+Score absteigend, dann `updated_at` absteigend, dann `id` aufsteigend als
+letzter, bedingungsloser Tie-Breaker.
+
+*Lead-Detail-Integration (Aufgabenstellung Phase 11/12):* neue Karte
+„Passende Immobilien" (`LeadPropertyMatches.tsx`) — beste Matches zuerst,
+Score + ✓/△/✕-Begründungen je Kriterium, schwächere Kandidaten (< 40 %,
+`MIN_DISPLAY_SCORE`) hinter einem Ausklapp-Toggle statt in der Primärliste.
+Vier Empty States, nicht drei — eine über die Aufgabenstellung
+hinausgehende, aber notwendige Ergänzung: „keine Objekte" (CTA zum
+Anlegen), „kein ausreichender Match" (mit optionalem Zugriff auf
+schwächere Kandidaten), „zu wenig Suchkriterien" (Lead hat außer dem
+Intent nichts Auswertbares), **und** „nicht anwendbar" (Verkäufer-/
+Bewertungs-Lead — Abschnitt rendert dann gar nichts, gleiche Konvention
+wie die bestehende Follow-up-Karte auf derselben Seite).
+
+*Property CRUD (Aufgabenstellung Phase 6):* `/properties` (Liste,
+Status-Filter), `/properties/new` (Anlegen), `/properties/$propertyId`
+(Detail + Inline-Bearbeiten + Archivieren). React-Hook-Form + Zod-Resolver
++ das bestehende shadcn-`Form`-Muster aus `CompanySettingsForm.tsx`
+(nicht das manuelle `useState`-Muster der 2-3-Felder-Mini-Formulare in
+Leads/Appointments — bei ~25 Feldern die passendere bestehende
+Konvention). „Archivieren" setzt `status='archived'`, löscht nie
+destruktiv (Historie bleibt für künftige Analytics erhalten, gleiche
+Philosophie wie `appointments`' Cancel-statt-Delete).
+
+*Tests:* 44 neue Unit-Tests (Parser-Grenzfälle mit den echten beobachteten
+Datenformaten als Fixtures, vollständige Matching-Matrix — perfekter
+Match, Hard-Constraint-Ausschluss, Budget innerhalb/außerhalb/fehlend,
+Zimmer exakt/teilweise/Mismatch, Location Match/Mismatch, unbekannte
+Kriterien, Score-Renormalisierung, deterministische Sortierung, expliziter
+Beleg dass Ausstattungsmerkmale nie als Matching-Grund erscheinen), 5 neue
+Integrationsszenarien gegen die echte, verbundene DB (Property anlegen/
+editieren, echtes Lead-Matching, Zero-Match/„nicht anwendbar", zu wenig
+Kriterien), 16/16 RLS-Assertions (`supabase/tests/properties_rls.sql`,
+inkl. Spoofing-Versuch per Insert *und* per Update, ungültige Werte für
+jeden CHECK, anon-Ausschluss, Nutzer-ohne-Firma-Ausschluss). Playwright um
+2 neue Szenarien erweitert (`/properties`-Liste + Detail-Navigation,
+„Passende Immobilien" mit echtem, in den E2E-Fixtures seedenden Match) plus
+Mobile-Smoke-Erweiterung um `/properties`; bestehende Slice-1-8B-Suiten
+unverändert grün (508/508 Unit-/Integrationstests, 14/14 Playwright).
+Security Advisor nach allen drei neuen Migrationen wieder exakt auf dem
+Vorzustand (4 vorbestehende INFO, 1 vorbestehendes, unabhängiges WARN
+„Leaked Password Protection" — kein neues Finding).
+
+*Noch nicht Teil dieses Slices (Aufgabenstellung, explizit):* Slice 8C,
+Feedback Intelligence, AI Product Manager, 3D Tours, Virtual Staging, AI
+Tour Guide, Document Intelligence, Workflow Builder, WhatsApp, Voice, CRM
+Sync, Property-Portal-Import, AI Action/Approval Model (siehe Abschnitt
+11/`docs/platform-modules.md` für die vollständige spätere Planung dieser
+Module — Property Domain Model + Matching V1 ist dafür jetzt die
+Grundlage, keines davon ist begonnen).
+
 Für kommende Phasen wahrscheinlich nötig (grobe Skizze, vor Umsetzung im
 Detail zu planen):
 
@@ -2123,30 +2271,36 @@ alle anderen Module oben sind davon unabhängig planbar.
 
 | Wave | Inhalt |
 |---|---|
-| 0 | Property Domain Model, AI Action/Approval Model (Foundations) |
-| 1 | Property Matching V1, Feedback Intelligence, Makler Copilot V1 (parallelisierbar) |
+| 0 | ~~Property Domain Model~~ ✅ DONE (Slice 9), AI Action/Approval Model (Foundation, weiterhin nur Zielschema) |
+| 1 | ~~Property Matching V1~~ ✅ DONE (Slice 9), Feedback Intelligence, Makler Copilot V1 (parallelisierbar) |
 | 2 | Adaptive Follow-ups, Listing Writer + Social Content, Management-Analytics-Erweiterung |
 | 3 | Appointment Agent, Viewing Feedback Assistant, Seller Updates, Price Assistant, Document-Storage-Foundation + Offer/Document Assistant + Document Intelligence |
 | 4 | 3D/Virtual Tours → AI Tour Guide (+ Property Knowledge Base) → Tour Analytics → Post-Tour Intelligence; Virtual Staging parallel — **erst nach Vendor-Freigabe durch Jannik** |
 | 5 | Morning Brief/Ops Home, Workflow-Builder-Re-Evaluation |
 
-**Unmittelbar empfohlener nächster Slice: Property Domain Model +
-Property Matching V1** (zusammen, nicht getrennt) — höchster
-Fundament-Hebel im Katalog, kein externes Vendor-/Domain-Risiko, additive
-Migration nach etabliertem Muster, UND direkt sichtbarer Kundennutzen
-statt einer unsichtbaren reinen Daten-Migration. Volle 10-Felder-Spec in
-`docs/platform-modules.md` Abschnitte 5.1/5.2; Definition of Done im
-Abschlussbericht dieser Session.
+**Update 2026-08-11 (Slice 9): Property Domain Model + Property Matching
+V1 sind umgesetzt** — volle Details in Abschnitt 7, DoD im Abschlussbericht
+dieser Session. Nächste gleichwertige Kandidaten aus Wave 1 (unabhängig
+voneinander, kein technischer Vorrang zwischen beiden): **Feedback
+Intelligence** (schnellster, vollständig unabhängiger Gewinn — kein
+Vendor, kein Foundation-Bedarf) oder **Makler Copilot V1**
+(höchste Wiederverwendung bestehender Architektur — Conversations-Domain
++ Lead-Summary-AI-Muster). Volle 10-Felder-Specs in
+`docs/platform-modules.md` Abschnitte 5.3/5.4.
 
 **Verbleibende Risiken dieser Erweiterung** (neu, nicht mit den
 E-Mail-Risiken 19–28 zu verwechseln — eigene Zählung, damit keine
 Kollision mit den bestehenden Risikonummern entsteht):
 
-29. **Property Domain Model dupliziert vorerst Daten mit `leads`-Freitextfeldern** — `object_desc`/`property_type`/`location` auf `leads` bleiben bestehen (kein Breaking Change), `leads.property_id` ist nullable. Migrationspfad von Freitext zu strukturierten Objekten ist bewusst nicht Teil dieses Architecture-Slices — im Implementierungs-Slice zu entscheiden (schrittweise Migration vs. dauerhaftes Nebeneinander).
+29. **Property Domain Model dupliziert vorerst Daten mit `leads`-Freitextfeldern — ✅ Semantik geklärt (2026-08-11, Slice 9), Migration bewusst nicht vorgesehen.** `object_desc`/`property_type`/`location`/`budget` auf `leads` bleiben unverändert bestehen (kein Breaking Change) — nicht als vorläufiger Zustand, sondern als dauerhaft **andere Sache**: `properties` ist der kanonische Objektbestand des Maklers, die Lead-Freitextfelder sind das Such-/Interessenprofil des Leads, nie dasselbe Konzept. Reale Formatanalyse (siehe Abschnitt 7, Slice-9-Eintrag) bestätigte zusätzlich, dass eine automatische Migration ohnehin unsicher wäre (`budget` mischt Kaufpreis- und Kaltmiete-Werte in derselben Spalte). Kein `leads.property_id` (bewusst nicht gebaut, siehe Abschnitt 7) — Matching liest beide Seiten getrennt und verknüpft nur zur Anfragezeit.
 30. **AI Action/Approval Model wird als Zielschema geplant, aber nicht implementiert** — bis zum ersten Tier-3-Modul (voraussichtlich Makler Copilot) bleibt es Dokumentation. Risiko: falls ein künftiger Slice unter Zeitdruck ein Tier-3-Feature ohne dieses Modell baut, entsteht doch wieder eine Insel-Lösung — sollte bei jedem neuen AI-Modul explizit gegen dieses Dokument geprüft werden.
 31. **3D-Tour-Vendor-Entscheidung ist ein echter externer Blocker für Wave 4** — analog zur Resend-Domain-Entscheidung: kein Vendor ist heute ausgewählt oder beauftragt, das ist eine bewusste Entscheidungslücke, kein Versehen. Ohne Jannik's Freigabe kann Wave 4 nicht beginnen.
 32. **Priorisierung/Scoring in Abschnitt 7 von `docs/platform-modules.md` ist qualitativ (1–3-Skala), nicht datengetrieben** — es existieren noch keine echten Nutzungsdaten für die neuen Module (sie existieren noch nicht). Nach den ersten 2–3 umgesetzten Modulen sollte die Priorisierung mit echten Ergebnissen (Nutzung, Feedback aus 5.3) neu geprüft werden, statt blind der heutigen Reihenfolge zu folgen.
 33. **Workflow Builder bewusst nicht spezifiziert** — ein generisches Regelwerk auf Verdacht zu bauen widerspräche CLAUDE.md; Re-Evaluation erst nach mindestens 3 konkreten Automatisierungsmodulen (siehe `docs/platform-modules.md` 5.14).
+34. **Matching kennt keine Ausstattungsmerkmale auf Lead-Seite** (neu, Slice 9) — bewusster Scope-Cut, kein Bug: kein Lead-Feld liefert heute eine zuverlässige Quelle für „Balkon gewünscht" o. ä. (siehe Abschnitt 7). `properties`-Objekte tragen die Merkmale bereits (`has_balcony` etc.), sie fließen nur noch nicht in den Match-Score ein. Löst sich, sobald ein künftiger Slice Suchkriterien strukturiert erfasst (z. B. erweiterte Widget-Qualifizierung) — kein Aufwand an der Matching-Engine selbst nötig, nur ein neues `LeadPreferences`-Feld plus ein neues `evaluate*`.
+35. **Budget als Hard Constraint ist eine getroffene, nicht von der Aufgabenstellung erzwungene Produktentscheidung** (neu, Slice 9) — ein geparster Lead-Budget-Wert schließt eine teurere Property vollständig aus, statt sie nur niedriger zu bewerten. Begründet in Abschnitt 7 (konservativer als einen über Budget liegenden Vorschlag zu zeigen), aber ein Makler könnte später berechtigt anderer Meinung sein („zeig mir auch leicht teurere Objekte"). Änderung wäre eine kleine, isolierte Anpassung an `evaluateBudget` (`matching-rules.ts`), keine Architekturänderung.
+36. **Nur `status='active'`-Objekte sind matchbar** (neu, Slice 9) — `reserved` bewusst ausgeschlossen (kein Vorschlag für ein Objekt, das bereits kurz vor Abschluss steht). Für V1 als sinnvoller Default gesetzt, nicht mit dem Auftraggeber einzeln abgestimmt — falls „reserviert, aber Interessent zeigen" später gewünscht wird, ist das eine Ein-Zeilen-Änderung an `MATCHABLE_PROPERTY_STATUSES`.
+37. **`properties`-Trigger musste nach einem echten Live-Befund korrigiert werden** (neu, Slice 9, dokumentiert statt verschwiegen) — die ursprüngliche Fassung von `tg_set_property_company` schlug für `service_role`-Aufrufer (kein `auth.uid()`) grundsätzlich fehl; erst beim Schreiben der echten DB-Integrationstests entdeckt, nicht vorab bedacht. Behoben (Abschnitt 7 für die genaue Begründung, warum das keine Sicherheitsschwächung ist) und erneut vollständig gegen RLS verifiziert (16/16). Lehre für künftige Migrationen mit auth.uid()-abhängigen Triggern: einen service_role-Pfad im Test von Anfang an mitdenken.
 
 Diese Erweiterung wird hier **nicht automatisch umgesetzt** — Property
 Domain Model + Property Matching V1 ist die empfohlene, aber separat zu

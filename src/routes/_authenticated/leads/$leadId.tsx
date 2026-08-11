@@ -28,6 +28,7 @@ import {
   getFollowupsForLead,
   type FollowupRow,
 } from "@/lib/followups/followups.functions";
+import { LeadPropertyMatches } from "@/components/properties/LeadPropertyMatches";
 
 export const Route = createFileRoute("/_authenticated/leads/$leadId")({
   head: () => ({ meta: [{ title: "Lead-Details – EstateAI" }] }),
@@ -501,6 +502,8 @@ function LeadDetailPage() {
               <Field label="Zeitraum" value={lead.timeframe ?? lead.move_in_date} />
             </dl>
           </div>
+
+          <LeadPropertyMatches leadId={leadId} />
 
           {/* Conversation */}
           <div className="mt-6 rounded-2xl border border-border bg-card p-6">

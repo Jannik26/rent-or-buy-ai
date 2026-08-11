@@ -25,8 +25,11 @@ import { Route as AuthenticatedDashboardRouteImport } from './routes/_authentica
 import { Route as AuthenticatedConversationsRouteImport } from './routes/_authenticated/conversations'
 import { Route as AuthenticatedAppointmentsRouteImport } from './routes/_authenticated/appointments'
 import { Route as AuthenticatedAnalyticsRouteImport } from './routes/_authenticated/analytics'
+import { Route as AuthenticatedPropertiesIndexRouteImport } from './routes/_authenticated/properties/index'
 import { Route as AuthenticatedLeadsIndexRouteImport } from './routes/_authenticated/leads/index'
 import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authenticated/admin/index'
+import { Route as AuthenticatedPropertiesNewRouteImport } from './routes/_authenticated/properties/new'
+import { Route as AuthenticatedPropertiesPropertyIdRouteImport } from './routes/_authenticated/properties/$propertyId'
 import { Route as AuthenticatedLeadsLeadIdRouteImport } from './routes/_authenticated/leads/$leadId'
 import { Route as ApiPublicWidgetChatRouteImport } from './routes/api/public/widget.chat'
 import { Route as ApiPublicEmailUnsubscribeRouteImport } from './routes/api/public/email.unsubscribe'
@@ -115,6 +118,12 @@ const AuthenticatedAnalyticsRoute = AuthenticatedAnalyticsRouteImport.update({
   path: '/analytics',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedPropertiesIndexRoute =
+  AuthenticatedPropertiesIndexRouteImport.update({
+    id: '/properties/',
+    path: '/properties/',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedLeadsIndexRoute = AuthenticatedLeadsIndexRouteImport.update({
   id: '/leads/',
   path: '/leads/',
@@ -125,6 +134,18 @@ const AuthenticatedAdminIndexRoute = AuthenticatedAdminIndexRouteImport.update({
   path: '/admin/',
   getParentRoute: () => AuthenticatedRouteRoute,
 } as any)
+const AuthenticatedPropertiesNewRoute =
+  AuthenticatedPropertiesNewRouteImport.update({
+    id: '/properties/new',
+    path: '/properties/new',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
+const AuthenticatedPropertiesPropertyIdRoute =
+  AuthenticatedPropertiesPropertyIdRouteImport.update({
+    id: '/properties/$propertyId',
+    path: '/properties/$propertyId',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const AuthenticatedLeadsLeadIdRoute =
   AuthenticatedLeadsLeadIdRouteImport.update({
     id: '/leads/$leadId',
@@ -178,8 +199,11 @@ export interface FileRoutesByFullPath {
   '/settings': typeof AuthenticatedSettingsRoute
   '/widget/$companyId': typeof WidgetCompanyIdRoute
   '/leads/$leadId': typeof AuthenticatedLeadsLeadIdRoute
+  '/properties/$propertyId': typeof AuthenticatedPropertiesPropertyIdRoute
+  '/properties/new': typeof AuthenticatedPropertiesNewRoute
   '/admin/': typeof AuthenticatedAdminIndexRoute
   '/leads/': typeof AuthenticatedLeadsIndexRoute
+  '/properties/': typeof AuthenticatedPropertiesIndexRoute
   '/api/internal/followups/process': typeof ApiInternalFollowupsProcessRoute
   '/api/public/email/unsubscribe': typeof ApiPublicEmailUnsubscribeRoute
   '/api/public/widget/chat': typeof ApiPublicWidgetChatRoute
@@ -203,8 +227,11 @@ export interface FileRoutesByTo {
   '/settings': typeof AuthenticatedSettingsRoute
   '/widget/$companyId': typeof WidgetCompanyIdRoute
   '/leads/$leadId': typeof AuthenticatedLeadsLeadIdRoute
+  '/properties/$propertyId': typeof AuthenticatedPropertiesPropertyIdRoute
+  '/properties/new': typeof AuthenticatedPropertiesNewRoute
   '/admin': typeof AuthenticatedAdminIndexRoute
   '/leads': typeof AuthenticatedLeadsIndexRoute
+  '/properties': typeof AuthenticatedPropertiesIndexRoute
   '/api/internal/followups/process': typeof ApiInternalFollowupsProcessRoute
   '/api/public/email/unsubscribe': typeof ApiPublicEmailUnsubscribeRoute
   '/api/public/widget/chat': typeof ApiPublicWidgetChatRoute
@@ -230,8 +257,11 @@ export interface FileRoutesById {
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/widget/$companyId': typeof WidgetCompanyIdRoute
   '/_authenticated/leads/$leadId': typeof AuthenticatedLeadsLeadIdRoute
+  '/_authenticated/properties/$propertyId': typeof AuthenticatedPropertiesPropertyIdRoute
+  '/_authenticated/properties/new': typeof AuthenticatedPropertiesNewRoute
   '/_authenticated/admin/': typeof AuthenticatedAdminIndexRoute
   '/_authenticated/leads/': typeof AuthenticatedLeadsIndexRoute
+  '/_authenticated/properties/': typeof AuthenticatedPropertiesIndexRoute
   '/api/internal/followups/process': typeof ApiInternalFollowupsProcessRoute
   '/api/public/email/unsubscribe': typeof ApiPublicEmailUnsubscribeRoute
   '/api/public/widget/chat': typeof ApiPublicWidgetChatRoute
@@ -257,8 +287,11 @@ export interface FileRouteTypes {
     | '/settings'
     | '/widget/$companyId'
     | '/leads/$leadId'
+    | '/properties/$propertyId'
+    | '/properties/new'
     | '/admin/'
     | '/leads/'
+    | '/properties/'
     | '/api/internal/followups/process'
     | '/api/public/email/unsubscribe'
     | '/api/public/widget/chat'
@@ -282,8 +315,11 @@ export interface FileRouteTypes {
     | '/settings'
     | '/widget/$companyId'
     | '/leads/$leadId'
+    | '/properties/$propertyId'
+    | '/properties/new'
     | '/admin'
     | '/leads'
+    | '/properties'
     | '/api/internal/followups/process'
     | '/api/public/email/unsubscribe'
     | '/api/public/widget/chat'
@@ -308,8 +344,11 @@ export interface FileRouteTypes {
     | '/_authenticated/settings'
     | '/widget/$companyId'
     | '/_authenticated/leads/$leadId'
+    | '/_authenticated/properties/$propertyId'
+    | '/_authenticated/properties/new'
     | '/_authenticated/admin/'
     | '/_authenticated/leads/'
+    | '/_authenticated/properties/'
     | '/api/internal/followups/process'
     | '/api/public/email/unsubscribe'
     | '/api/public/widget/chat'
@@ -449,6 +488,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedAnalyticsRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/properties/': {
+      id: '/_authenticated/properties/'
+      path: '/properties'
+      fullPath: '/properties/'
+      preLoaderRoute: typeof AuthenticatedPropertiesIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/_authenticated/leads/': {
       id: '/_authenticated/leads/'
       path: '/leads'
@@ -461,6 +507,20 @@ declare module '@tanstack/react-router' {
       path: '/admin'
       fullPath: '/admin/'
       preLoaderRoute: typeof AuthenticatedAdminIndexRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/properties/new': {
+      id: '/_authenticated/properties/new'
+      path: '/properties/new'
+      fullPath: '/properties/new'
+      preLoaderRoute: typeof AuthenticatedPropertiesNewRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
+    '/_authenticated/properties/$propertyId': {
+      id: '/_authenticated/properties/$propertyId'
+      path: '/properties/$propertyId'
+      fullPath: '/properties/$propertyId'
+      preLoaderRoute: typeof AuthenticatedPropertiesPropertyIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
     '/_authenticated/leads/$leadId': {
@@ -516,8 +576,11 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedDiagnoseRoute: typeof AuthenticatedDiagnoseRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
   AuthenticatedLeadsLeadIdRoute: typeof AuthenticatedLeadsLeadIdRoute
+  AuthenticatedPropertiesPropertyIdRoute: typeof AuthenticatedPropertiesPropertyIdRoute
+  AuthenticatedPropertiesNewRoute: typeof AuthenticatedPropertiesNewRoute
   AuthenticatedAdminIndexRoute: typeof AuthenticatedAdminIndexRoute
   AuthenticatedLeadsIndexRoute: typeof AuthenticatedLeadsIndexRoute
+  AuthenticatedPropertiesIndexRoute: typeof AuthenticatedPropertiesIndexRoute
 }
 
 const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
@@ -528,8 +591,12 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedDiagnoseRoute: AuthenticatedDiagnoseRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
   AuthenticatedLeadsLeadIdRoute: AuthenticatedLeadsLeadIdRoute,
+  AuthenticatedPropertiesPropertyIdRoute:
+    AuthenticatedPropertiesPropertyIdRoute,
+  AuthenticatedPropertiesNewRoute: AuthenticatedPropertiesNewRoute,
   AuthenticatedAdminIndexRoute: AuthenticatedAdminIndexRoute,
   AuthenticatedLeadsIndexRoute: AuthenticatedLeadsIndexRoute,
+  AuthenticatedPropertiesIndexRoute: AuthenticatedPropertiesIndexRoute,
 }
 
 const AuthenticatedRouteRouteWithChildren =

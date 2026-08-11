@@ -8,6 +8,7 @@ import {
   Users,
   MessageSquare,
   Calendar,
+  Building2,
   BarChart3,
   Settings,
   Shield,
@@ -22,6 +23,7 @@ import { checkSuperAdmin } from "@/lib/admin.functions";
 export const NAV = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/leads", label: "Leads", icon: Users },
+  { to: "/properties", label: "Immobilien", icon: Building2 },
   { to: "/conversations", label: "Conversations", icon: MessageSquare },
   { to: "/appointments", label: "Appointments", icon: Calendar },
   { to: "/analytics", label: "Analytics", icon: BarChart3 },

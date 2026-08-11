@@ -16,7 +16,7 @@ async function expectNoHorizontalOverflow(page: import("@playwright/test").Page)
   );
 }
 
-test("mobile smoke: app loads, mobile navigation opens, Leads and Conversations are reachable", async ({
+test("mobile smoke: app loads, mobile navigation opens, Leads, Immobilien and Conversations are reachable", async ({
   page,
 }) => {
   await page.goto("/dashboard");
@@ -31,6 +31,11 @@ test("mobile smoke: app loads, mobile navigation opens, Leads and Conversations 
   // accessible name contains "Leads" (e.g. "Neue Leads 2 +2 diese Woche").
   await page.getByRole("link", { name: "Leads", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Leads" })).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+
+  await page.getByRole("button", { name: "Menü öffnen" }).click();
+  await page.getByRole("link", { name: "Immobilien" }).click();
+  await expect(page.getByRole("heading", { name: "Immobilien" })).toBeVisible();
   await expectNoHorizontalOverflow(page);
 
   await page.getByRole("button", { name: "Menü öffnen" }).click();

@@ -158,6 +158,17 @@ verdichtet — jedes Modul kann in weiteren Slices vertieft werden.
 
 ### 5.1 Property Domain Model *(Foundation, kein eigenständiges User-Feature)*
 
+**✅ DONE (2026-08-11, Product-Track-Slice 9).** Volle Umsetzungsdetails
+und Abweichungen von diesem Planungstext in `ROADMAP.md` Abschnitt 7
+(Slice-9-Eintrag) — hier nur die wichtigsten Präzisierungen, damit dieser
+Plan nicht stillschweigend falsch bleibt: **kein** `leads.property_id`
+gebaut (bewusst, YAGNI — Matching verknüpft nur zur Anfragezeit, kein
+gespeicherter Link nötig); `property_type` ist ein kontrolliertes
+Vokabular (`wohnung`/`haus`/`grundstueck`/`gewerbe`/`sonstiges`), kein
+Freitext-Fallback; `company_id`-Ableitung nutzt einen eigenen, auf
+`auth.uid()` basierenden Trigger (nicht per Referenz wie bei
+`appointments`, da eine Property keine natürliche Upstream-Referenz hat).
+
 - **User Value:** indirekt — macht jedes objektbezogene Feature unten erst möglich; direkter Nutzen erst durch Property Matching V1 sichtbar.
 - **Scope (V1):** `properties`-Tabelle (Adresse, Typ, Zimmer, Fläche, Preis/Miete, Ausstattung als strukturierte Felder + Freitext-Fallback), Verknüpfung zu `companies`, optionale Verknüpfung von `leads.property_id`.
 - **Datenmodell:** neu, additiv. `properties(id, company_id, title, property_type, address, rooms, living_area_m2, price_or_rent, price_type, features jsonb, status, created_at, updated_at)`. `leads` bekommt `ADD COLUMN IF NOT EXISTS property_id uuid references properties(id)` — nullable, kein Bruch bestehender Leads.
@@ -173,6 +184,15 @@ verdichtet — jedes Modul kann in weiteren Slices vertieft werden.
 - **Wave:** 0 (Foundation, zuerst).
 
 ### 5.2 Property Matching V1
+
+**✅ DONE (2026-08-11, Product-Track-Slice 9).** Volle Details in
+`ROADMAP.md` Abschnitt 7. Wichtigste Präzisierungen ggü. diesem Plan:
+Budget und Transaktionstyp sind **Hard Constraints** (disqualifizieren
+vollständig, nicht nur Score-mindernd) — im ursprünglichen V1-Scope-Text
+hier nicht explizit unterschieden, in der Aufgabenstellung selbst aber so
+vorgegeben; Ausstattungsmerkmale (Balkon etc.) fließen **noch nicht** ein
+(kein zuverlässiges Lead-Feld dafür, siehe Risiko 34); nur
+`status='active'`-Objekte sind matchbar (Risiko 36).
 
 - **User Value:** Makler sieht sofort, welche vorhandenen Objekte zu einem Lead passen — spart manuelles Durchsuchen, direkter Conversion-Hebel.
 - **Scope (V1):** einfacher, erklärbarer Match-Score zwischen Lead-Kriterien (Budget, Lage, Objekttyp aus bestehenden Feldern) und `properties` derselben Company. Keine Gewichtung/ML — nachvollziehbare Regeln (✓/△/✕ wie im bestehenden Scoring-Stil).
@@ -659,10 +679,9 @@ unabhängig planbar/umsetzbar.
 
 ## 10. Empfohlener nächster Slice
 
-**Property Domain Model + Property Matching V1** (Abschnitte 5.1 + 5.2
-zusammen als ein Slice) — höchster Fundament-Hebel im ganzen Katalog,
-niedrigstes Risiko (keine externe Abhängigkeit, additive Migration,
-etabliertes RLS-/Server-Function-Muster), UND direkt sichtbarer,
-differenzierender Kundennutzen statt einer reinen unsichtbaren
-Daten-Migration. Volle Definition of Done: siehe Abschlussbericht dieser
-Session bzw. der nächste Slice-Prompt.
+**✅ Property Domain Model + Property Matching V1 — DONE (2026-08-11,
+Product-Track-Slice 9).** Details/Abweichungen: Abschnitte 5.1/5.2 oben
+und `ROADMAP.md` Abschnitt 7. Nächste gleichwertige Kandidaten aus Wave 1
+(Abschnitt 8), unabhängig voneinander: **Feedback Intelligence** (5.3,
+schnellster unabhängiger Gewinn) oder **Makler Copilot V1** (5.4, höchste
+Wiederverwendung bestehender Architektur).
