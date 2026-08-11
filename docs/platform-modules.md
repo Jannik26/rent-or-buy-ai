@@ -210,6 +210,21 @@ vorgegeben; Ausstattungsmerkmale (Balkon etc.) fließen **noch nicht** ein
 
 ### 5.3 Feedback Intelligence
 
+**✅ DONE (2026-08-11, Product-Track-Slice 10).** Volle Umsetzungsdetails
+in `ROADMAP.md` Abschnitt 7. Wichtigste Präzisierungen ggü. diesem Plan:
+zwei Tabellen (`feedback_items` + append-only `feedback_analyses`), nicht
+eine — Raw/AI-Trennung ist strukturell (eigene Tabelle, eigene fehlende
+UPDATE/DELETE-Policy), nicht nur Spaltentrennung; `category`/`cluster_key`
+existieren nicht auf `feedback_items` (Kategorie lebt ausschließlich auf
+`feedback_analyses` bzw. als `category_override`); `critical`-Priorität
+ist strukturell nur per Human-Override erreichbar (DB-Constraint schließt
+sie aus dem AI-Schema aus); kein Clustering gebaut (bewusst zurückgestellt,
+siehe Risiko 38); tenantübergreifende Ansicht (`/admin/feedback`) wiederverwendet
+die bestehende `super_admin`-Rolle statt eines neuen Rollenkonzepts.
+**Echter Live-Befund:** das für `ANTHROPIC_API_KEY` genutzte Konto hat
+aktuell kein ausreichendes Guthaben — betrifft denselben Key wie
+Widget-Chat/Lead-Summary, siehe ROADMAP Risiko 41.
+
 - **User Value:** Jannik (Produktverantwortlicher) sieht systematisch, was Kunden wirklich stört/wollen, statt verstreuter Einzelnachrichten — schnellere, datengestützte Priorisierung.
 - **Scope (V1):** ein Feedback-Formular/-Eingang (manuell erfasst oder aus Support-Mail kopiert — kein neuer Kanal in V1) + AI-Klassifikation (Bug/Feature Request/UX/Performance/Integration/Pricing/Support/Positiv/Sonstiges) + einfache Häufigkeits-/Trendübersicht.
 - **Datenmodell:** neu — `feedback_items(id, company_id nullable, source, raw_text, category, ai_confidence, cluster_key nullable, sentiment, created_at)`. Bewusst getrennt von `leads`/`conversations` (anderer Zweck).
@@ -681,7 +696,17 @@ unabhängig planbar/umsetzbar.
 
 **✅ Property Domain Model + Property Matching V1 — DONE (2026-08-11,
 Product-Track-Slice 9).** Details/Abweichungen: Abschnitte 5.1/5.2 oben
-und `ROADMAP.md` Abschnitt 7. Nächste gleichwertige Kandidaten aus Wave 1
-(Abschnitt 8), unabhängig voneinander: **Feedback Intelligence** (5.3,
-schnellster unabhängiger Gewinn) oder **Makler Copilot V1** (5.4, höchste
-Wiederverwendung bestehender Architektur).
+und `ROADMAP.md` Abschnitt 7.
+
+**✅ Feedback Intelligence V1 — DONE (2026-08-11, Product-Track-Slice
+10).** Details/Abweichungen: Abschnitt 5.3 oben und `ROADMAP.md`
+Abschnitt 7. Damit ist Wave 1 bis auf ein Modul abgeschlossen.
+
+**Nächster Kandidat: Makler Copilot V1** (5.4) — höchste Wiederverwendung
+bestehender Architektur (Conversations-Domain + Lead-Summary-AI-Muster),
+kein Vendor, keine offene Foundation-Abhängigkeit. Vor umfangreicherer
+neuer AI-Nutzung sollte das in Risiko 41 (`ROADMAP.md`) dokumentierte
+Anthropic-Konto-Guthaben-Problem mit Jannik geklärt sein — blockiert die
+Implementierung selbst nicht (dieselbe Fail-Closed-Semantik wie in
+Slice 10 ist direkt anwendbar), aber ohne echtes Guthaben bliebe auch ein
+Copilot-Feature live unbenutzbar.

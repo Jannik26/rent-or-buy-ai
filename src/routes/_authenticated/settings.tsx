@@ -5,6 +5,7 @@ import { ProfileSettingsForm } from "@/components/settings/ProfileSettingsForm";
 import { CompanySettingsForm } from "@/components/settings/CompanySettingsForm";
 import { ComingSoonSettingsCard } from "@/components/settings/ComingSoonSettingsCard";
 import { BillingSettingsSection } from "@/components/settings/BillingSettingsSection";
+import { FeedbackSettingsSection } from "@/components/settings/FeedbackSettingsSection";
 import { useUnsavedChangesGuard } from "@/lib/settings/use-unsaved-changes-guard";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -26,6 +27,7 @@ export const Route = createFileRoute("/_authenticated/settings")({
 const TABS = [
   { value: "profil", label: "Profil" },
   { value: "unternehmen", label: "Unternehmen" },
+  { value: "feedback", label: "Feedback" },
   { value: "sicherheit", label: "Sicherheit" },
   { value: "benachrichtigungen", label: "Benachrichtigungen" },
   { value: "abo", label: "Abo & Abrechnung" },
@@ -84,6 +86,10 @@ function SettingsPage() {
 
         <TabsContent value="unternehmen" className="mt-6">
           <CompanySettingsForm onDirtyChange={setCompanyDirty} />
+        </TabsContent>
+
+        <TabsContent value="feedback" className="mt-6">
+          <FeedbackSettingsSection />
         </TabsContent>
 
         <TabsContent value="sicherheit" className="mt-6">

@@ -290,6 +290,71 @@ test.describe("Core journey (authenticated as the QA/E2E test tenant)", () => {
     expect(errors, `console errors on /properties: ${errors.join("\n")}`).toEqual([]);
   });
 
+  test("I: Settings > Feedback shows the fixture item with its AI-labeled category/priority, filtering works, and submitting new feedback succeeds", async ({
+    page,
+  }) => {
+    const errors = trackConsoleErrors(page);
+    await page.goto("/settings");
+    await page.getByRole("tab", { name: "Feedback" }).click();
+
+    await expect(page.getByText("Mein bisheriges Feedback")).toBeVisible();
+    await expect(
+      page.getByText(
+        "E2E QA Fixture — Ich würde gerne mehrere Besichtigungstermine gleichzeitig verschieben können.",
+      ),
+    ).toBeVisible();
+    // Explainability/provenance (task Abschnitt 6): the fixture's category
+    // and priority came from feedback_analyses (no human override seeded),
+    // so both must render clearly labeled as an AI suggestion, never as a
+    // bare, unqualified fact.
+    await expect(page.getByText("KI-Vorschlag: Feature-Wunsch")).toBeVisible();
+    await expect(page.getByText(/KI-Priorität \(Vorschlag\): Mittel/)).toBeVisible();
+
+    // Status filter narrows the history list.
+    await page.getByRole("button", { name: "Erledigt", exact: true }).click();
+    await expect(page.getByText("Kein Feedback mit diesem Status.")).toBeVisible();
+    await page.getByRole("button", { name: "Alle", exact: true }).click();
+    await expect(
+      page.getByText(
+        "E2E QA Fixture — Ich würde gerne mehrere Besichtigungstermine gleichzeitig verschieben können.",
+      ),
+    ).toBeVisible();
+
+    // Real submission through the UI — asserts only the submission UX
+    // (never a specific AI outcome, which depends on live provider
+    // availability outside this test's control, see ROADMAP.md). Same
+    // self-contained try/finally cleanup pattern as test D2's probe
+    // message — this is a real write outside the fixed-id fixture set,
+    // so global.teardown.ts alone would never know to remove it.
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!supabaseUrl || !serviceRoleKey) {
+      throw new Error(
+        "SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY are not set — see tests/e2e/README.md.",
+      );
+    }
+    const admin = createClient(supabaseUrl, serviceRoleKey);
+    const uniqueText = `E2E QA Playwright Submission ${Date.now()}`;
+    try {
+      await page.getByPlaceholder(/Ich würde gerne mehrere Besichtigungstermine/).fill(uniqueText);
+      await page.getByRole("button", { name: "Feedback senden" }).click();
+      await expect(page.getByText("Feedback gespeichert.")).toBeVisible();
+      await expect(page.getByText(uniqueText)).toBeVisible();
+    } finally {
+      const { data: created } = await admin
+        .from("feedback_items")
+        .select("id")
+        .eq("company_id", QA_COMPANY_ID)
+        .eq("raw_content", uniqueText);
+      for (const row of created ?? []) {
+        await admin.from("feedback_analyses").delete().eq("feedback_item_id", row.id);
+        await admin.from("feedback_items").delete().eq("id", row.id);
+      }
+    }
+
+    expect(errors, `console errors on Settings > Feedback: ${errors.join("\n")}`).toEqual([]);
+  });
+
   test("G: primary navigation moves cleanly between every core section", async ({ page }) => {
     const errors = trackConsoleErrors(page);
     await page.goto("/dashboard");

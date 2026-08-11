@@ -25,7 +25,10 @@ export type AdminCompanyOverviewRow = {
 const EDITABLE_COLUMNS =
   "subscription_status, plan, demo_started_at, demo_expires_at, subscription_started_at, subscription_expires_at, admin_notes";
 
-async function requireSuperAdmin(userId: string) {
+/** Exported so other admin-only server-function modules (e.g.
+ * feedback/admin-feedback.functions.ts) can reuse the exact same
+ * super_admin gate instead of re-implementing it — one check, one place. */
+export async function requireSuperAdmin(userId: string) {
   const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
   const { data: isSuperAdmin, error } = await supabaseAdmin.rpc("has_role", {
     _user_id: userId,

@@ -47,6 +47,12 @@ export const FIXTURE_IDS = {
   // profile so the Lead Detail page's "Passende Immobilien" section has a
   // real match to render in the E2E run, not an empty state.
   property: "e2e00004-0000-0000-0000-000000000001",
+  // Product Track slice 10 (Feedback Intelligence V1) — a pre-seeded,
+  // already-analyzed feedback item so the Settings > Feedback history and
+  // its AI/human-override rendering can be asserted without depending on
+  // a real, potentially unavailable AI provider call during the E2E run.
+  feedbackItem: "e2e00005-0000-0000-0000-000000000001",
+  feedbackAnalysis: "e2e00006-0000-0000-0000-000000000001",
 } as const;
 
 const CONVERSATION_LEAD_NAME = "E2E QA Fixture — Conversation Lead";
@@ -243,6 +249,49 @@ export async function seedFixtures(admin: SupabaseClient): Promise<void> {
   );
   if (propertyError)
     throw new Error(`seedFixtures: property upsert failed: ${propertyError.message}`);
+
+  // Feedback Intelligence fixture (Product Track slice 10) — pre-seeded
+  // as already-analyzed (not submitted live during the E2E run) so the
+  // assertions never depend on a real, potentially unavailable AI
+  // provider call succeeding within the test's timeout.
+  const { error: feedbackError } = await admin.from("feedback_items").upsert(
+    [
+      {
+        id: FIXTURE_IDS.feedbackItem,
+        company_id: QA_COMPANY_ID,
+        raw_content:
+          "E2E QA Fixture — Ich würde gerne mehrere Besichtigungstermine gleichzeitig verschieben können.",
+        status: "new",
+        analysis_status: "completed",
+      },
+    ],
+    { onConflict: "id" },
+  );
+  if (feedbackError)
+    throw new Error(`seedFixtures: feedback_items upsert failed: ${feedbackError.message}`);
+
+  const { error: feedbackAnalysisError } = await admin.from("feedback_analyses").upsert(
+    [
+      {
+        id: FIXTURE_IDS.feedbackAnalysis,
+        feedback_item_id: FIXTURE_IDS.feedbackItem,
+        company_id: QA_COMPANY_ID,
+        analysis_version: 1,
+        category: "feature_request",
+        sentiment: "neutral",
+        summary: "Bulk rescheduling for appointments",
+        suggested_priority: "medium",
+        confidence: 0.8,
+        model: "e2e-fixture",
+        provider: "e2e-fixture",
+      },
+    ],
+    { onConflict: "id" },
+  );
+  if (feedbackAnalysisError)
+    throw new Error(
+      `seedFixtures: feedback_analyses upsert failed: ${feedbackAnalysisError.message}`,
+    );
 }
 
 export async function cleanupFixtures(admin: SupabaseClient): Promise<void> {
@@ -268,4 +317,6 @@ export async function cleanupFixtures(admin: SupabaseClient): Promise<void> {
   await admin.from("leads").delete().eq("id", FIXTURE_IDS.conversationLead);
   await admin.from("leads").delete().eq("id", FIXTURE_IDS.appointmentLead);
   await admin.from("properties").delete().eq("id", FIXTURE_IDS.property);
+  await admin.from("feedback_analyses").delete().eq("id", FIXTURE_IDS.feedbackAnalysis);
+  await admin.from("feedback_items").delete().eq("id", FIXTURE_IDS.feedbackItem);
 }

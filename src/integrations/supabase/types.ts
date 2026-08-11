@@ -361,6 +361,135 @@ export type Database = {
         };
         Relationships: [];
       };
+      feedback_analyses: {
+        Row: {
+          analysis_version: number;
+          category: string;
+          company_id: string;
+          confidence: number | null;
+          created_at: string;
+          feedback_item_id: string;
+          id: string;
+          model: string;
+          provider: string;
+          sentiment: string | null;
+          suggested_priority: string;
+          summary: string;
+        };
+        Insert: {
+          analysis_version: number;
+          category: string;
+          company_id: string;
+          confidence?: number | null;
+          created_at?: string;
+          feedback_item_id: string;
+          id?: string;
+          model: string;
+          provider: string;
+          sentiment?: string | null;
+          suggested_priority: string;
+          summary: string;
+        };
+        Update: {
+          analysis_version?: number;
+          category?: string;
+          company_id?: string;
+          confidence?: number | null;
+          created_at?: string;
+          feedback_item_id?: string;
+          id?: string;
+          model?: string;
+          provider?: string;
+          sentiment?: string | null;
+          suggested_priority?: string;
+          summary?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "feedback_analyses_company_id_fkey";
+            columns: ["company_id"];
+            isOneToOne: false;
+            referencedRelation: "companies";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "feedback_analyses_feedback_item_id_fkey";
+            columns: ["feedback_item_id"];
+            isOneToOne: false;
+            referencedRelation: "feedback_items";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "feedback_analyses_feedback_item_id_fkey";
+            columns: ["feedback_item_id"];
+            isOneToOne: false;
+            referencedRelation: "feedback_items_with_latest_analysis";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      feedback_items: {
+        Row: {
+          analysis_attempted_at: string | null;
+          analysis_error: string | null;
+          analysis_status: string;
+          category_override: string | null;
+          company_id: string;
+          created_at: string;
+          id: string;
+          priority_override: string | null;
+          raw_content: string;
+          reviewed_at: string | null;
+          reviewed_by: string | null;
+          source: string;
+          status: string;
+          submitted_by: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          analysis_attempted_at?: string | null;
+          analysis_error?: string | null;
+          analysis_status?: string;
+          category_override?: string | null;
+          company_id: string;
+          created_at?: string;
+          id?: string;
+          priority_override?: string | null;
+          raw_content: string;
+          reviewed_at?: string | null;
+          reviewed_by?: string | null;
+          source?: string;
+          status?: string;
+          submitted_by?: string | null;
+          updated_at?: string;
+        };
+        Update: {
+          analysis_attempted_at?: string | null;
+          analysis_error?: string | null;
+          analysis_status?: string;
+          category_override?: string | null;
+          company_id?: string;
+          created_at?: string;
+          id?: string;
+          priority_override?: string | null;
+          raw_content?: string;
+          reviewed_at?: string | null;
+          reviewed_by?: string | null;
+          source?: string;
+          status?: string;
+          submitted_by?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "feedback_items_company_id_fkey";
+            columns: ["company_id"];
+            isOneToOne: false;
+            referencedRelation: "companies";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       leads: {
         Row: {
           ai_summary: string | null;
@@ -727,7 +856,44 @@ export type Database = {
       };
     };
     Views: {
-      [_ in never]: never;
+      feedback_items_with_latest_analysis: {
+        Row: {
+          ai_analysis_version: number | null;
+          ai_analyzed_at: string | null;
+          ai_category: string | null;
+          ai_confidence: number | null;
+          ai_model: string | null;
+          ai_provider: string | null;
+          ai_sentiment: string | null;
+          ai_suggested_priority: string | null;
+          ai_summary: string | null;
+          analysis_attempted_at: string | null;
+          analysis_error: string | null;
+          analysis_id: string | null;
+          analysis_status: string | null;
+          category_override: string | null;
+          company_id: string | null;
+          created_at: string | null;
+          id: string | null;
+          priority_override: string | null;
+          raw_content: string | null;
+          reviewed_at: string | null;
+          reviewed_by: string | null;
+          source: string | null;
+          status: string | null;
+          submitted_by: string | null;
+          updated_at: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "feedback_items_company_id_fkey";
+            columns: ["company_id"];
+            isOneToOne: false;
+            referencedRelation: "companies";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Functions: {
       admin_company_overview: {

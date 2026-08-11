@@ -43,4 +43,14 @@ test("mobile smoke: app loads, mobile navigation opens, Leads, Immobilien and Co
   await expect(page.getByRole("heading", { name: "Conversations" })).toBeVisible();
   await expect(page.getByText(CONVERSATION_LEAD_NAME)).toBeVisible();
   await expectNoHorizontalOverflow(page);
+
+  // Product Track slice 10 — Feedback submission must be fully usable on
+  // a phone viewport too (task Abschnitt 7: "Mobile vollständig
+  // funktionsfähig"), not just present.
+  await page.getByRole("button", { name: "Menü öffnen" }).click();
+  await page.getByRole("link", { name: "Einstellungen" }).click();
+  await page.getByRole("tab", { name: "Feedback" }).click();
+  await expect(page.getByPlaceholder(/Ich würde gerne mehrere Besichtigungstermine/)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Feedback senden" })).toBeVisible();
+  await expectNoHorizontalOverflow(page);
 });

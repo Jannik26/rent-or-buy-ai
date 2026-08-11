@@ -31,6 +31,7 @@ import { Route as AuthenticatedAdminIndexRouteImport } from './routes/_authentic
 import { Route as AuthenticatedPropertiesNewRouteImport } from './routes/_authenticated/properties/new'
 import { Route as AuthenticatedPropertiesPropertyIdRouteImport } from './routes/_authenticated/properties/$propertyId'
 import { Route as AuthenticatedLeadsLeadIdRouteImport } from './routes/_authenticated/leads/$leadId'
+import { Route as AuthenticatedAdminFeedbackRouteImport } from './routes/_authenticated/admin/feedback'
 import { Route as ApiPublicWidgetChatRouteImport } from './routes/api/public/widget.chat'
 import { Route as ApiPublicEmailUnsubscribeRouteImport } from './routes/api/public/email.unsubscribe'
 import { Route as ApiInternalFollowupsProcessRouteImport } from './routes/api/internal/followups.process'
@@ -152,6 +153,12 @@ const AuthenticatedLeadsLeadIdRoute =
     path: '/leads/$leadId',
     getParentRoute: () => AuthenticatedRouteRoute,
   } as any)
+const AuthenticatedAdminFeedbackRoute =
+  AuthenticatedAdminFeedbackRouteImport.update({
+    id: '/admin/feedback',
+    path: '/admin/feedback',
+    getParentRoute: () => AuthenticatedRouteRoute,
+  } as any)
 const ApiPublicWidgetChatRoute = ApiPublicWidgetChatRouteImport.update({
   id: '/api/public/widget/chat',
   path: '/api/public/widget/chat',
@@ -198,6 +205,7 @@ export interface FileRoutesByFullPath {
   '/diagnose': typeof AuthenticatedDiagnoseRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/widget/$companyId': typeof WidgetCompanyIdRoute
+  '/admin/feedback': typeof AuthenticatedAdminFeedbackRoute
   '/leads/$leadId': typeof AuthenticatedLeadsLeadIdRoute
   '/properties/$propertyId': typeof AuthenticatedPropertiesPropertyIdRoute
   '/properties/new': typeof AuthenticatedPropertiesNewRoute
@@ -226,6 +234,7 @@ export interface FileRoutesByTo {
   '/diagnose': typeof AuthenticatedDiagnoseRoute
   '/settings': typeof AuthenticatedSettingsRoute
   '/widget/$companyId': typeof WidgetCompanyIdRoute
+  '/admin/feedback': typeof AuthenticatedAdminFeedbackRoute
   '/leads/$leadId': typeof AuthenticatedLeadsLeadIdRoute
   '/properties/$propertyId': typeof AuthenticatedPropertiesPropertyIdRoute
   '/properties/new': typeof AuthenticatedPropertiesNewRoute
@@ -256,6 +265,7 @@ export interface FileRoutesById {
   '/_authenticated/diagnose': typeof AuthenticatedDiagnoseRoute
   '/_authenticated/settings': typeof AuthenticatedSettingsRoute
   '/widget/$companyId': typeof WidgetCompanyIdRoute
+  '/_authenticated/admin/feedback': typeof AuthenticatedAdminFeedbackRoute
   '/_authenticated/leads/$leadId': typeof AuthenticatedLeadsLeadIdRoute
   '/_authenticated/properties/$propertyId': typeof AuthenticatedPropertiesPropertyIdRoute
   '/_authenticated/properties/new': typeof AuthenticatedPropertiesNewRoute
@@ -286,6 +296,7 @@ export interface FileRouteTypes {
     | '/diagnose'
     | '/settings'
     | '/widget/$companyId'
+    | '/admin/feedback'
     | '/leads/$leadId'
     | '/properties/$propertyId'
     | '/properties/new'
@@ -314,6 +325,7 @@ export interface FileRouteTypes {
     | '/diagnose'
     | '/settings'
     | '/widget/$companyId'
+    | '/admin/feedback'
     | '/leads/$leadId'
     | '/properties/$propertyId'
     | '/properties/new'
@@ -343,6 +355,7 @@ export interface FileRouteTypes {
     | '/_authenticated/diagnose'
     | '/_authenticated/settings'
     | '/widget/$companyId'
+    | '/_authenticated/admin/feedback'
     | '/_authenticated/leads/$leadId'
     | '/_authenticated/properties/$propertyId'
     | '/_authenticated/properties/new'
@@ -530,6 +543,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthenticatedLeadsLeadIdRouteImport
       parentRoute: typeof AuthenticatedRouteRoute
     }
+    '/_authenticated/admin/feedback': {
+      id: '/_authenticated/admin/feedback'
+      path: '/admin/feedback'
+      fullPath: '/admin/feedback'
+      preLoaderRoute: typeof AuthenticatedAdminFeedbackRouteImport
+      parentRoute: typeof AuthenticatedRouteRoute
+    }
     '/api/public/widget/chat': {
       id: '/api/public/widget/chat'
       path: '/api/public/widget/chat'
@@ -575,6 +595,7 @@ interface AuthenticatedRouteRouteChildren {
   AuthenticatedDashboardRoute: typeof AuthenticatedDashboardRoute
   AuthenticatedDiagnoseRoute: typeof AuthenticatedDiagnoseRoute
   AuthenticatedSettingsRoute: typeof AuthenticatedSettingsRoute
+  AuthenticatedAdminFeedbackRoute: typeof AuthenticatedAdminFeedbackRoute
   AuthenticatedLeadsLeadIdRoute: typeof AuthenticatedLeadsLeadIdRoute
   AuthenticatedPropertiesPropertyIdRoute: typeof AuthenticatedPropertiesPropertyIdRoute
   AuthenticatedPropertiesNewRoute: typeof AuthenticatedPropertiesNewRoute
@@ -590,6 +611,7 @@ const AuthenticatedRouteRouteChildren: AuthenticatedRouteRouteChildren = {
   AuthenticatedDashboardRoute: AuthenticatedDashboardRoute,
   AuthenticatedDiagnoseRoute: AuthenticatedDiagnoseRoute,
   AuthenticatedSettingsRoute: AuthenticatedSettingsRoute,
+  AuthenticatedAdminFeedbackRoute: AuthenticatedAdminFeedbackRoute,
   AuthenticatedLeadsLeadIdRoute: AuthenticatedLeadsLeadIdRoute,
   AuthenticatedPropertiesPropertyIdRoute:
     AuthenticatedPropertiesPropertyIdRoute,

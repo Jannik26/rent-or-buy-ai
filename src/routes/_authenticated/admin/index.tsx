@@ -1,8 +1,8 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { ChevronLeft, ChevronRight, Search, Shield } from "lucide-react";
+import { ArrowRight, ChevronLeft, ChevronRight, Search, Shield } from "lucide-react";
 import {
   checkSuperAdmin,
   adminListCompanies,
@@ -87,9 +87,17 @@ function AdminPage() {
 
   return (
     <div className="p-4 sm:p-8 max-w-[1600px] mx-auto w-full">
-      <div className="flex items-center gap-2">
-        <Shield className="size-6 text-primary" />
-        <h1 className="font-display text-2xl sm:text-3xl">Admin – Unternehmen</h1>
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-2">
+          <Shield className="size-6 text-primary" />
+          <h1 className="font-display text-2xl sm:text-3xl">Admin – Unternehmen</h1>
+        </div>
+        <Link
+          to="/admin/feedback"
+          className="text-sm text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5"
+        >
+          Feedback (alle Unternehmen) <ArrowRight className="size-3.5" />
+        </Link>
       </div>
       <p className="mt-1 text-sm text-muted-foreground">
         {filtered.length} von {companies.length}{" "}

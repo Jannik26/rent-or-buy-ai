@@ -11,7 +11,8 @@ Foundation) + Slice 6 (Production Follow-up Scheduler) + Slice 7
 Slice 8B (Inbound E-Mail Replies) + E-Mail-Infrastructure-Live-Verification
 (2026-08-10, kein Code-Slice) + AI-Operations-Platform-Architecture-Slice
 (2026-08-11, kein Code-Slice, siehe Abschnitt 11) + Slice 9 (Property
-Domain Model + Property Matching V1, 2026-08-11) ·
+Domain Model + Property Matching V1, 2026-08-11) + Slice 10 (Feedback
+Intelligence V1, 2026-08-11) ·
 Kanonisches Planungsdokument.**
 
 Dieses Dokument ersetzt `.lovable/plan.md` als laufende Roadmap. Es wird bei
@@ -134,6 +135,7 @@ Branch/Kontext; **Integration in EstateAI selbst** ist PLANNED)
 | Automatisierte Follow-ups | 🟡 PARTIAL (2026-08-08/09, Slice 5 „Foundation" + Slice 6 „Production Scheduler" + Slice 7 „E-Mail Delivery Foundation" + Slice 8A „E-Mail Delivery Hardening" + Slice 8B „Inbound E-Mail Replies") | Engine + Scheduler + E-Mail-Kanal in **beide** Richtungen (Outbound inkl. Bounce/Complaint-Webhooks, Suppression, Retry/Backoff, echtem Unsubscribe; Inbound inkl. sicherer Conversation-Auflösung, Sender-Verifikation, Follow-up-Stopp bei echter Antwort) vollständig code-seitig fertig. **Scheduler operativ verifiziert** (echter `200` nach Korrektur von `CRON_SECRET`, siehe Risiko 14 — nicht mehr nur code-seitig). **Verbleibend, bevor tatsächlich eine echte E-Mail rausgeht/reinkommt:** `EMAIL_DELIVERY_ENABLED`/`EMAIL_PROVIDER_API_KEY`/`EMAIL_SENDER_ADDRESS`/`EMAIL_PROVIDER_WEBHOOK_SECRET`/`EMAIL_INBOUND_*` sind serverseitig standardmäßig nicht gesetzt (sicherer Default aus, siehe Abschnitt 7/Risiko 19/25/27) — ohne echten Resend-Account + verifizierte Domain (+ Inbound-MX-Record) bleibt der Kanal inaktiv und der Worker verhält sich weiterhin wie in Slice 6 (nur kanonischer Dashboard-Eintrag) |
 | Property Domain Model | ✅ DONE (2026-08-11, Slice 9) | Kanonische `properties`-Tabelle (Identität/Vermarktung/Lage/Kerndaten/Ausstattung/Beschreibung), company-scoped RLS analog `appointments`, `company_id` serverseitig per Trigger aus dem authentifizierten Nutzer abgeleitet. Bewusst **kein** `leads.property_id` (kein gespeicherter Link — Matching berechnet zur Anfragezeit, siehe Abschnitt 7). Ersetzt **nicht** die Freitextfelder auf `leads` — beide bleiben bewusst getrennte Wahrheiten (Objektbestand vs. Lead-Suchprofil), siehe Risiko 29 |
 | Property Matching V1 | ✅ DONE (2026-08-11, Slice 9) | Deterministische, erklärbare Matching-Engine (`src/lib/matching/`) — kein LLM, jeder Score aus einzelnen ✓/△/✕-Gründen rekonstruierbar. Lead-Detail-Seite zeigt „Passende Immobilien" mit Score + Begründung, Empty States (keine Objekte/kein ausreichender Match/zu wenig Suchkriterien) |
+| Feedback Intelligence V1 | ✅ DONE (2026-08-11, Slice 10) | Kanonischer Feedback-Datenpfad: `feedback_items` (Raw, human-owned Status/Overrides) strikt getrennt von `feedback_analyses` (append-only, AI-derived, versioniert). Klassifikation über die bestehende Anthropic-Anbindung, serverseitig Zod-validiert, `critical`-Priorität strukturell nur für Menschen erreichbar (nie AI-Output). AI-Ausfall verliert nie Raw-Feedback (`analysis_status='pending'/'failed'` statt Datenverlust). Settings-Tab „Feedback" (Einreichung + eigene Historie), `/admin/feedback` (tenantübergreifende Sicht, nur Super-Admin, reused `requireSuperAdmin`). **Live entdeckt:** das für `ANTHROPIC_API_KEY` genutzte Anthropic-Konto hat aktuell kein ausreichendes Guthaben (`AI_APICallError`, echter 400 von der Anthropic-API) — betrifft denselben Key wie Widget-Chat und Lead-Summary, siehe Risiko 41 |
 | DSGVO-Löschfristen | ⏳ PLANNED | `data-retention.ts` definiert Zielwerte (30 Tage Demo, 6–12 Monate ohne Abschluss) explizit als **noch nicht durchgesetzt** |
 | AI-Provider-Anbindung | ✅ DONE (aber nicht abstrahiert) | Direkt `@ai-sdk/anthropic` via Vercel AI SDK (`ai`-Package), kein Gateway/Abstraktionslayer — funktioniert, aber Wechsel des Modells/Anbieters erfordert Codeänderung an einer Stelle (`ai-gateway.server.ts`, aktuell nur ein dünner Wrapper) |
 | Agent/Widget-ID-Struktur (RE/MAX-Vorbereitung) | ⏳ PLANNED | Nur `company_id` existiert; `agent_id`/`widget_id` noch nicht im Schema — siehe Abschnitt 7 |
@@ -1497,6 +1499,173 @@ Sync, Property-Portal-Import, AI Action/Approval Model (siehe Abschnitt
 Module — Property Domain Model + Matching V1 ist dafür jetzt die
 Grundlage, keines davon ist begonnen).
 
+**Feedback Intelligence V1 (✅ DONE, 2026-08-11, Product-Track-Slice 10):**
+erster kanonischer Feedback-Datenpfad für EstateAI — aus
+`docs/platform-modules.md` Abschnitt 5.3 abgeleitet, hier die
+Implementierungs-Zusammenfassung inkl. realer Abweichungen/Präzisierungen.
+
+*Domain-Modell (Aufgabenstellung Abschnitt 3/4):* zwei Tabellen, bewusst
+getrennt — `feedback_items` (was der Makler tatsächlich gesagt hat:
+`raw_content`, `source`, human-owned `status`, `category_override`/
+`priority_override`, `reviewed_by`/`reviewed_at`, plus die
+Analyse-Lifecycle-Spalten `analysis_status`/`analysis_attempted_at`/
+`analysis_error`) und `feedback_analyses` (die KI-Interpretation:
+`category`, `sentiment`, `summary`, `suggested_priority`, `confidence`,
+`model`, `provider`, `analysis_version`). `feedback_analyses` hat
+**keine** UPDATE/DELETE-Policy überhaupt — Append-only ist strukturell
+erzwungen, nicht nur Konvention. Neue Konvenience-View
+`feedback_items_with_latest_analysis` (`security_invoker = true`, joint
+per `LATERAL`+`ORDER BY analysis_version DESC LIMIT 1`) ist der einzige
+Lesepfad, den sowohl die tenant-scoped als auch die Admin-Ansicht nutzen —
+eine Wahrheit statt zwei Queries, die auseinanderlaufen könnten.
+
+*Provenance/Trennung Raw vs. AI (Aufgabenstellung Abschnitt 4/6, der
+Kern dieses Slices):* `category_override`/`priority_override` leben
+ausschließlich auf `feedback_items`, nie als Mutation von
+`feedback_analyses` — ein neuer KI-Lauf schreibt immer eine **neue** Zeile
+(nächste `analysis_version`), kann die bestehenden Override-Spalten also
+strukturell nie berühren, nicht nur per Konvention (Aufgabenstellung
+Abschnitt 13: „Human Override darf nicht beim nächsten AI-Lauf heimlich
+überschrieben werden"). `resolveEffectiveCategory`/
+`resolveEffectivePriority` (`feedback-rules.ts`) sind die **einzige**
+Stelle, die „Override falls vorhanden, sonst KI-Vorschlag, sonst nichts"
+entscheidet — UI zeigt beides visuell unterscheidbar (KI-Werte mit
+🤖-Kennzeichnung/„KI-Vorschlag"-Label, nie als bloße Tatsache).
+
+*`critical`-Priorität strukturell Human-only (Aufgabenstellung Abschnitt
+12, wörtlich umgesetzt):* `feedback_analyses.suggested_priority` hat eine
+eigene, engere `CHECK`-Constraint (`low`/`medium`/`high`, **ohne**
+`critical`) als `feedback_items.priority_override` (`low`/`medium`/
+`high`/`critical`) — die KI kann `critical` also nicht einmal
+syntaktisch ausgeben, nicht nur „per Prompt-Anweisung vermieden". Live
+gegen die echte DB verifiziert (RLS-Testfall
+`ai_cannot_suggest_critical_priority`).
+
+*AI-Klassifikation (Aufgabenstellung Abschnitt 9):* minimale Erweiterung
+des bestehenden AI-Pfads (`feedback-classification.server.ts`, exakt das
+Muster von `lead-summary.server.ts` — `generateText` + `Output.object` +
+Zod-Schema, keine neue Abstraktionsschicht). Sendet ausschließlich
+`raw_content` an den Provider, nie Firmenname/Absender/andere
+Feedback-Items. Serverseitige Zod-Re-Validierung nach `Output.object`
+(„belt-and-braces" — verlässt sich nicht allein auf die AI-SDK-eigene
+Validierung).
+
+*AI-Failure-Semantik (Aufgabenstellung Abschnitt 10, zentrale Garantie
+dieses Slices):* Reihenfolge immer „Raw persistieren → AI versuchen"
+(`submitFeedback`), nie umgekehrt. Jeder denkbare Fehler (fehlender Key,
+Provider-Fehler, ungültiger Output) landet in
+`feedback_items.analysis_status='failed'` mit einem kurzen,
+nicht-sensiblen `analysis_error` (z. B. `provider_not_configured`,
+`provider_error`, `timeout`) — nie der rohe Exception-Text (könnte
+Prompt-/Feedback-Inhalt spiegeln). `retryFeedbackAnalysis` erlaubt
+spätere Wiederholung (neue `analysis_version`, nie ein Update der
+fehlgeschlagenen Zeile — es gibt ohnehin nie eine Zeile für einen
+gescheiterten Versuch, `feedback_analyses` bleibt dann einfach leer für
+diese Version).
+
+**Echter Live-Befund, nicht Teil der ursprünglichen Planung:** beim
+echten Live-Test des Erfolgspfads (bewusst ein echter Anthropic-Aufruf,
+kein Mock — siehe Testabschnitt unten) schlug die Klassifikation mit
+einem echten `AI_APICallError` fehl: „Your credit balance is too low to
+access the Anthropic API." Direkt reproduziert außerhalb der Testsuite
+zur Bestätigung, dass es kein Bug in diesem Code ist. **Das betrifft
+denselben `ANTHROPIC_API_KEY`, den auch der bestehende Widget-Chat und
+die Lead-Summary-Generierung nutzen** — diese beiden vermutlich
+produktionsrelevanten, älteren Features sind von demselben
+Konto-Guthaben-Problem betroffen, nicht nur die neue
+Feedback-Klassifikation. Das System selbst verhält sich dabei exakt wie
+entworfen (Raw Feedback blieb vollständig erhalten, `analysis_status`
+korrekt auf `failed`, keine verwaiste Analyse-Zeile) — der Fund ist ein
+externes Konto-/Billing-Problem, kein Code-Defekt, siehe Risiko 41.
+
+*Kategorien (Aufgabenstellung Abschnitt 5):* zentral in
+`feedback-rules.ts` definiert (`bug`/`feature_request`/`ux`/
+`performance`/`integration`/`pricing`/`support`/`positive`/`other`),
+identisch in der DB-`CHECK`-Constraint gespiegelt — die KI kann keine
+freie Kategorie erfinden (Zod-Enum + DB-Constraint, doppelt abgesichert).
+
+*Submission-UI + Inbox (Aufgabenstellung Abschnitt 7/8, IA-Entscheidung
+explizit begründet):* kein neuer Hauptnavpunkt — ein neuer Settings-Tab
+„Feedback" (Einreichung + eigene, tenant-scoped Historie mit
+Status-Filter) neben den bestehenden sechs Tabs, exakt das
+`SettingsSection`-Kartenmuster von `CompanySettingsForm.tsx`. Für die
+**tenantübergreifende** Sicht (der eigentliche Haupt-Anwendungsfall für
+Jannik als Produktverantwortlichen) neue Route `/admin/feedback`,
+gesichert durch denselben `requireSuperAdmin`-Mechanismus wie die
+bestehende `/admin`-Seite (kein neues Rollenkonzept, siehe unten) — mit
+Filtern nach Status/Kategorie und echten, funktionierenden
+Human-Review-Steuerelementen (Status/Kategorie-/Prioritäts-Override, per
+`adminUpdateFeedback` inkl. `admin_audit_log`-Eintrag, exakt das Muster
+von `adminUpdateCompany`). Bewusste Scope-Entscheidung: die
+tenant-eigene Ansicht bekam keine eigenen Override-Steuerelemente — ein
+Makler muss sein eigenes Feedback nicht neu kategorisieren, das ist die
+Aufgabe des Produktverantwortlichen in der Admin-Ansicht.
+
+*Cross-Tenant-Aggregation/Rollen (Aufgabenstellung Abschnitt 14, explizit
+geprüft statt improvisiert):* es existiert bereits ein sicherer
+Mechanismus für genau diesen Fall (`super_admin`-Rolle + `has_role()` +
+`requireSuperAdmin()`, seit dem Admin-Dashboard etabliert) — wiederverwendet
+(`requireSuperAdmin` aus `admin.functions.ts` exportiert), nicht neu
+erfunden. Damit war der in der Aufgabenstellung vorgesehene Fallback
+„falls keine sichere Rolle existiert: tenantbezogen bleiben" nicht nötig.
+
+*Clustering (Aufgabenstellung Abschnitt 11 — bewusst zurückgestellt, mit
+Begründung):* **kein** echtes Ähnlichkeits-Clustering in V1. Das
+Datenmodell verhindert es nicht (jede künftige Cluster-Zuordnung könnte
+sauber auf `feedback_items.id` referenzieren), aber ein belastbares
+Ähnlichkeits-Clustering hätte entweder Embeddings/Vektorsuche oder eine
+weitere LLM-Pipeline gebraucht — zu groß für dieses Slice ohne
+„unnötige Architektur" zu bauen (Aufgabenstellung erlaubt genau diesen
+Aufschub explizit). Die Kategorie-Filter in `/admin/feedback` sind die
+einzige V1-Form von „Gruppierung" — grob, aber nachvollziehbar (nie eine
+KI-behauptete Gruppierung ohne Beleg).
+
+*Observability (Aufgabenstellung Abschnitt 20):* vier neue
+`system_events`-Nachrichten (`feedback_created`, `feedback_analysis_completed`,
+`feedback_analysis_failed`, `feedback_reviewed`), `source='feedback'` —
+nie der Feedback-Text oder die KI-Zusammenfassung im `context`, nur
+IDs/Kategorien/Gründe (gleiche Disziplin wie die bestehenden
+E-Mail-Webhook-Events).
+
+*Datenmodell/Migrationen:* drei Migrationen
+(`20260811141652_add_feedback_intelligence.sql` inkl. beider Tabellen,
+Trigger, RLS, View — die nötigen `REVOKE EXECUTE`-Statements für die
+neuen Trigger-Funktionen wurden dieses Mal direkt in derselben Migration
+mitgeliefert statt wie bei Slice 9 nachträglich in einer zweiten, weil
+der Security-Advisor-Befund aus Slice 9 bereits bekannt war). Ein echter
+Live-Befund während der Integrationstest-Entwicklung führte zu keiner
+weiteren Korrektur-Migration dieses Mal — die aus Slice 9 gelernte
+service_role-Vertrauensregel wurde direkt beim ersten Entwurf des
+`feedback_items`-Triggers mit eingebaut.
+
+*Tests:* 26 neue Unit-Tests (Schema-Validierung inkl. absichtlich
+kaputtem/erfundenem AI-Output, Override-Auflösung inkl. Beleg dass ein
+Override einen späteren KI-Lauf nie verlieren kann), 4 neue
+Integrationsszenarien gegen die echte, verbundene DB (einer davon ein
+**echter** Anthropic-Live-Aufruf statt eines Mocks — deckte den oben
+beschriebenen echten Konto-Befund auf; der Test selbst bleibt robust
+gegenüber Erfolg *und* Fehlschlag und prüft in beiden Fällen die
+Kerninvariante „Raw Feedback bleibt unangetastet"), 24/24
+RLS-Assertions gegen echte impersonierte Tenants (inkl. Spoofing per
+Insert *und* Update, Cross-Tenant-Analyse-Insert-Versuch, `critical` für
+KI unerreichbar, Append-only-Erzwingung selbst für den Eigentümer, View
+respektiert dieselbe Isolation). 3 neue Playwright-Szenarien (Fixture-
+Anzeige inkl. KI-Kennzeichnung, Status-Filter, echte Einreichung durch
+die UI mit selbst-aufräumendem Cleanup) + Mobile-Erweiterung. Bestehende
+Slice-1-9-Suiten unverändert grün (538/538 Vitest, 15/15 Playwright).
+Security Advisor nach der Migration wieder exakt auf dem Vorzustand.
+
+*Noch nicht Teil dieses Slices (Aufgabenstellung, explizit):* autonomer
+AI Product Manager, automatische Codeänderungen/Deployments, globale
+Conversation-Massenauswertung, Slice 8C, Makler Copilot, Adaptive
+Follow-ups, 3D Tours, Virtual Staging, Document Intelligence, Workflow
+Builder — keines davon begonnen. Perspektivischer AI-Product-Manager-Pfad
+(Trends/Gruppierung/Roadmap-Vorschläge) ist in `docs/platform-modules.md`
+Abschnitt 5.3 als Foundation dokumentiert, nicht implementiert; jede
+zukünftige Automatisierung darauf muss weiterhin durch das
+HITL-Modell (Abschnitt 11 dieses Dokuments) — nie autonome
+Code-/Deployment-/Pricing-Entscheidungen.
+
 Für kommende Phasen wahrscheinlich nötig (grobe Skizze, vor Umsetzung im
 Detail zu planen):
 
@@ -2272,21 +2441,27 @@ alle anderen Module oben sind davon unabhängig planbar.
 | Wave | Inhalt |
 |---|---|
 | 0 | ~~Property Domain Model~~ ✅ DONE (Slice 9), AI Action/Approval Model (Foundation, weiterhin nur Zielschema) |
-| 1 | ~~Property Matching V1~~ ✅ DONE (Slice 9), Feedback Intelligence, Makler Copilot V1 (parallelisierbar) |
+| 1 | ~~Property Matching V1~~ ✅ DONE (Slice 9), ~~Feedback Intelligence~~ ✅ DONE (Slice 10), Makler Copilot V1 |
 | 2 | Adaptive Follow-ups, Listing Writer + Social Content, Management-Analytics-Erweiterung |
 | 3 | Appointment Agent, Viewing Feedback Assistant, Seller Updates, Price Assistant, Document-Storage-Foundation + Offer/Document Assistant + Document Intelligence |
 | 4 | 3D/Virtual Tours → AI Tour Guide (+ Property Knowledge Base) → Tour Analytics → Post-Tour Intelligence; Virtual Staging parallel — **erst nach Vendor-Freigabe durch Jannik** |
 | 5 | Morning Brief/Ops Home, Workflow-Builder-Re-Evaluation |
 
 **Update 2026-08-11 (Slice 9): Property Domain Model + Property Matching
-V1 sind umgesetzt** — volle Details in Abschnitt 7, DoD im Abschlussbericht
-dieser Session. Nächste gleichwertige Kandidaten aus Wave 1 (unabhängig
-voneinander, kein technischer Vorrang zwischen beiden): **Feedback
-Intelligence** (schnellster, vollständig unabhängiger Gewinn — kein
-Vendor, kein Foundation-Bedarf) oder **Makler Copilot V1**
-(höchste Wiederverwendung bestehender Architektur — Conversations-Domain
-+ Lead-Summary-AI-Muster). Volle 10-Felder-Specs in
-`docs/platform-modules.md` Abschnitte 5.3/5.4.
+V1 sind umgesetzt** — volle Details in Abschnitt 7.
+
+**Update 2026-08-11 (Slice 10): Feedback Intelligence V1 ist umgesetzt** —
+volle Details in Abschnitt 7, DoD im Abschlussbericht dieser Session.
+Damit ist Wave 1 bis auf **Makler Copilot V1** vollständig abgeschlossen —
+das ist jetzt der klare nächste Kandidat (höchste Wiederverwendung
+bestehender Architektur: Conversations-Domain + Lead-Summary-AI-Muster,
+kein Vendor, keine offene Foundation-Abhängigkeit). Volle 10-Felder-Spec
+in `docs/platform-modules.md` Abschnitt 5.4. **Vor dem nächsten AI-Slice
+zu klären (Risiko 41):** das Anthropic-Konto-Guthaben-Problem betrifft
+potenziell auch einen Makler-Copilot-Slice, da derselbe Key genutzt
+würde — sollte vor umfangreicherer AI-Nutzung mit Jannik geklärt sein,
+blockiert aber nicht die Code-Implementierung selbst (identische
+Fail-Closed-Semantik wie in Slice 10 anwendbar).
 
 **Verbleibende Risiken dieser Erweiterung** (neu, nicht mit den
 E-Mail-Risiken 19–28 zu verwechseln — eigene Zählung, damit keine
@@ -2301,6 +2476,10 @@ Kollision mit den bestehenden Risikonummern entsteht):
 35. **Budget als Hard Constraint ist eine getroffene, nicht von der Aufgabenstellung erzwungene Produktentscheidung** (neu, Slice 9) — ein geparster Lead-Budget-Wert schließt eine teurere Property vollständig aus, statt sie nur niedriger zu bewerten. Begründet in Abschnitt 7 (konservativer als einen über Budget liegenden Vorschlag zu zeigen), aber ein Makler könnte später berechtigt anderer Meinung sein („zeig mir auch leicht teurere Objekte"). Änderung wäre eine kleine, isolierte Anpassung an `evaluateBudget` (`matching-rules.ts`), keine Architekturänderung.
 36. **Nur `status='active'`-Objekte sind matchbar** (neu, Slice 9) — `reserved` bewusst ausgeschlossen (kein Vorschlag für ein Objekt, das bereits kurz vor Abschluss steht). Für V1 als sinnvoller Default gesetzt, nicht mit dem Auftraggeber einzeln abgestimmt — falls „reserviert, aber Interessent zeigen" später gewünscht wird, ist das eine Ein-Zeilen-Änderung an `MATCHABLE_PROPERTY_STATUSES`.
 37. **`properties`-Trigger musste nach einem echten Live-Befund korrigiert werden** (neu, Slice 9, dokumentiert statt verschwiegen) — die ursprüngliche Fassung von `tg_set_property_company` schlug für `service_role`-Aufrufer (kein `auth.uid()`) grundsätzlich fehl; erst beim Schreiben der echten DB-Integrationstests entdeckt, nicht vorab bedacht. Behoben (Abschnitt 7 für die genaue Begründung, warum das keine Sicherheitsschwächung ist) und erneut vollständig gegen RLS verifiziert (16/16). Lehre für künftige Migrationen mit auth.uid()-abhängigen Triggern: einen service_role-Pfad im Test von Anfang an mitdenken.
+38. **Kein echtes Feedback-Clustering** (neu, Slice 10, bewusster Aufschub) — Kategorie-Filter in `/admin/feedback` sind die einzige V1-Gruppierung. Echtes Ähnlichkeits-Clustering (Embeddings/Vektorsuche) bewusst nicht gebaut, um keine „unnötige Architektur" auf Verdacht zu errichten (Aufgabenstellung erlaubt diesen Aufschub explizit). Das Datenmodell verhindert es nicht — ein künftiger Cluster-Slice kann sauber auf bestehende `feedback_items.id`s referenzieren.
+39. **AI Product Manager bleibt reine Foundation, keine Umsetzung** (neu, Slice 10) — Feedback Intelligence liefert jetzt den Rohdatenpfad (`feedback_items`/`feedback_analyses`), aber Trend-Erkennung, Roadmap-Vorschläge, Kundenquantifizierung usw. sind nicht gebaut. Jede künftige Automatisierung darauf **muss** durch das HITL-Modell (Abschnitt 11) laufen — insbesondere darf ein künftiger „AI Product Manager" nie autonom Code ändern, deployen oder Preise setzen, exakt wie in der Aufgabenstellung gefordert.
+40. **Tenant-eigene Feedback-Ansicht hat keine Override-Steuerelemente** (neu, Slice 10, bewusste Scope-Entscheidung) — nur `/admin/feedback` (Super-Admin) kann Kategorie/Priorität/Status eines Feedbacks korrigieren; ein Makler kann sein eigenes Feedback nur einreichen und dessen Status/KI-Einschätzung ansehen, nicht verändern. Falls ein Makler später selbst korrigieren soll, ist das eine kleine, isolierte UI-Ergänzung (dieselbe `overrideFeedbackAnalysis`/`updateFeedbackStatus`-Server-Funktion existiert bereits tenant-scoped), keine Architekturänderung.
+41. **Anthropic-Konto (`ANTHROPIC_API_KEY`) hat aktuell kein ausreichendes Guthaben** (neu, Slice 10, echter Live-Befund, kein Code-Defekt) — ein echter Klassifikations-Testlauf schlug mit `AI_APICallError: "Your credit balance is too low to access the Anthropic API"` fehl, außerhalb der Testsuite direkt reproduziert zur Bestätigung. **Betrifft denselben Key wie der bestehende Widget-Chat und die Lead-Summary-Generierung** — vermutlich sind diese beiden production-relevanten Bestandsfeatures aktuell ebenfalls betroffen, nicht nur die neue Feedback-Klassifikation. Feedback Intelligence selbst degradiert dabei korrekt (Raw Feedback bleibt erhalten, `analysis_status='failed'`), aber das ist ein **externes Konto-/Billing-Problem außerhalb des Scopes dieses Slices** — nötiger externer Schritt: Anthropic-Konto-Guthaben/Billing bei console.anthropic.com prüfen und aufladen. Keine Umgehung/kein Workaround in diesem Slice versucht.
 
 Diese Erweiterung wird hier **nicht automatisch umgesetzt** — Property
 Domain Model + Property Matching V1 ist die empfohlene, aber separat zu
